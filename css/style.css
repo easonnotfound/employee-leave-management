@@ -884,6 +884,131 @@ body {
     }
 }
 
+/* 请假确认界面样式 */
+.leave-confirmation {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 249, 250, 0.95));
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    margin: var(--space-3) 0;
+    box-shadow: var(--shadow-md);
+}
+
+.leave-confirmation h4 {
+    margin: 0 0 var(--space-4) 0;
+    color: var(--primary-blue);
+    font-size: var(--font-size-lg);
+    text-align: center;
+    border-bottom: 2px solid var(--primary-blue);
+    padding-bottom: var(--space-2);
+}
+
+.confirmation-details {
+    margin-bottom: var(--space-5);
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-item .label {
+    font-weight: 600;
+    color: var(--gray-700);
+    flex: 0 0 auto;
+    margin-right: var(--space-3);
+}
+
+.detail-item .value {
+    color: var(--gray-900);
+    font-weight: 500;
+    text-align: right;
+    flex: 1;
+}
+
+.confirmation-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: center;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--gray-200);
+}
+
+.confirm-btn, .cancel-btn {
+    padding: var(--space-3) var(--space-6);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 140px;
+    justify-content: center;
+}
+
+.confirm-btn {
+    background: var(--success-green);
+    color: white;
+}
+
+.confirm-btn:hover {
+    background: #2fb344;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
+}
+
+.cancel-btn {
+    background: var(--gray-100);
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+}
+
+.cancel-btn:hover {
+    background: var(--gray-200);
+    color: var(--gray-800);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* 确认消息容器样式 */
+.confirmation-message .message-bubble {
+    background: none;
+    padding: 0;
+    box-shadow: none;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+    .confirmation-actions {
+        flex-direction: column;
+    }
+    
+    .confirm-btn, .cancel-btn {
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .detail-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-1);
+    }
+    
+    .detail-item .value {
+        text-align: left;
+    }
+}
+
 .form-header {
     text-align: center;
     margin-bottom: var(--space-8);

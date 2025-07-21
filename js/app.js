@@ -144,6 +144,7 @@ class LeaveManagementApp {
         this.leaveRequest = null;
         this.chatHistory = [];
         this.leaveRecords = this.loadLeaveRecords();
+        this.pendingLeaveInfo = null; // 待确认的请假信息
         
         this.init();
     }
@@ -432,18 +433,21 @@ class LeaveManagementApp {
         input.value = '';
 
         // 显示AI思考状态
-        document.getElementById('chatStatus').textContent = 'AI正在思考...';
+        document.getElementById('chatStatus').textContent = 'AI正在回复...';
         document.getElementById('sendBtn').disabled = true;
+
+        // 创建AI消息占位符
+        const aiMessageId = this.addMessage('ai', '正在思考...');
 
         try {
             // 添加用户消息到对话历史
             this.chatHistory.push({ role: 'user', content: message });
 
-            // 调用AI API
-            const aiResponse = await this.callAIAPI(this.chatHistory);
+            // 调用AI API（流式传输）
+            const response = await this.callAIAPI(this.chatHistory, true);
             
-            // 显示AI回复
-            this.addMessage('ai', aiResponse);
+            // 处理流式响应
+            const aiResponse = await this.handleStreamResponse(response, aiMessageId);
             
             // 添加AI回复到对话历史
             this.chatHistory.push({ role: 'assistant', content: aiResponse });
@@ -453,7 +457,8 @@ class LeaveManagementApp {
 
         } catch (error) {
             console.error('AI Chat error:', error);
-            this.addMessage('ai', '抱歉，我遇到了一些技术问题。请稍后重试，或者您可以直接告诉我：\n1. 请假类型\n2. 开始日期\n3. 结束日期\n4. 请假原因');
+            // 更新错误消息
+            this.updateStreamingMessage(aiMessageId, '抱歉，我遇到了一些技术问题。请稍后重试，或者您可以直接告诉我：\n1. 请假类型\n2. 开始日期\n3. 结束日期\n4. 请假原因');
         } finally {
             document.getElementById('chatStatus').textContent = '请输入您的消息...';
             document.getElementById('sendBtn').disabled = false;
@@ -461,9 +466,9 @@ class LeaveManagementApp {
     }
 
     /**
-     * 调用云雾AI API
+     * 调用云雾AI API（支持流式传输）
      */
-    async callAIAPI(messages) {
+    async callAIAPI(messages, isStream = true) {
         const response = await fetch(`${AI_CONFIG.baseURL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -475,7 +480,7 @@ class LeaveManagementApp {
                 messages: messages,
                 max_tokens: AI_CONFIG.maxTokens,
                 temperature: AI_CONFIG.temperature,
-                stream: false
+                stream: isStream
             })
         });
 
@@ -483,13 +488,88 @@ class LeaveManagementApp {
             throw new Error(`AI API请求失败: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
-        
-        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-            throw new Error('AI API返回数据格式错误');
-        }
+        if (isStream) {
+            return response;
+        } else {
+            const data = await response.json();
+            
+            if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                throw new Error('AI API返回数据格式错误');
+            }
 
-        return data.choices[0].message.content;
+            return data.choices[0].message.content;
+        }
+    }
+
+    /**
+     * 处理流式响应
+     */
+    async handleStreamResponse(response, messageId) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        
+                        if (data === '[DONE]') {
+                            return fullContent;
+                        }
+
+                        try {
+                            const json = JSON.parse(data);
+                            if (json.choices && json.choices[0] && json.choices[0].delta) {
+                                const content = json.choices[0].delta.content;
+                                if (content) {
+                                    fullContent += content;
+                                    
+                                    // 实时更新消息内容
+                                    this.updateStreamingMessage(messageId, fullContent);
+                                }
+                            }
+                        } catch (e) {
+                            // 忽略JSON解析错误
+                        }
+                    }
+                }
+            }
+
+            return fullContent;
+        } catch (error) {
+            console.error('Stream processing error:', error);
+            throw error;
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
+     * 更新流式消息内容
+     */
+    updateStreamingMessage(messageId, content) {
+        const messageElement = document.getElementById(messageId);
+        if (messageElement) {
+            const bubbleElement = messageElement.querySelector('.message-bubble');
+            if (bubbleElement) {
+                bubbleElement.innerHTML = content.replace(/\n/g, '<br>');
+                
+                // 滚动到底部
+                const messagesContainer = document.getElementById('chatMessages');
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
     }
 
     /**
@@ -578,7 +658,7 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             const extractResponse = await this.callAIAPI([
                 { role: 'system', content: '你是一个信息提取助手，专门从对话中提取请假信息并格式化为JSON。只返回JSON格式的数据或null，不要任何解释文字。' },
                 { role: 'user', content: extractPrompt }
-            ]);
+            ], false); // 使用非流式调用进行信息提取
 
             // 尝试解析提取的信息
             let leaveInfo;
@@ -598,7 +678,8 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             }
 
             if (leaveInfo && leaveInfo.leaveType && leaveInfo.startDate && leaveInfo.endDate) {
-                await this.generateLeaveForm(leaveInfo);
+                // 显示确认信息并提供生成表格按钮
+                this.showLeaveConfirmation(leaveInfo);
             } else {
                 // 信息不完整，继续对话
                 const missingInfo = [];
@@ -612,6 +693,127 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             console.error('Extract leave info error:', error);
             this.addMessage('ai', '处理信息时遇到问题，请重新描述您的请假需求，包括请假类型、日期和原因。');
         }
+    }
+
+    /**
+     * 显示请假确认信息
+     */
+    showLeaveConfirmation(leaveInfo) {
+        // 计算请假天数
+        const validation = TimeUtils.validateLeaveDate(leaveInfo.startDate, leaveInfo.endDate);
+        const days = validation.valid ? validation.days : 1;
+        
+        // 创建确认消息的HTML
+        const confirmationHtml = `
+            <div class="leave-confirmation">
+                <h4>📋 请假信息确认</h4>
+                <div class="confirmation-details">
+                    <div class="detail-item">
+                        <span class="label">请假类型：</span>
+                        <span class="value">${leaveInfo.leaveType}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">开始日期：</span>
+                        <span class="value">${leaveInfo.startDate}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">结束日期：</span>
+                        <span class="value">${leaveInfo.endDate}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">请假天数：</span>
+                        <span class="value">${days} 天</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">请假原因：</span>
+                        <span class="value">${leaveInfo.reason || '个人事务'}</span>
+                    </div>
+                </div>
+                <div class="confirmation-actions">
+                    <button class="confirm-btn" onclick="window.app.confirmGenerateForm()">
+                        <i class="fas fa-check"></i>
+                        确认生成表格
+                    </button>
+                    <button class="cancel-btn" onclick="window.app.cancelGeneration()">
+                        <i class="fas fa-times"></i>
+                        重新输入
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // 存储请假信息供后续生成使用
+        this.pendingLeaveInfo = leaveInfo;
+
+        // 添加到聊天区域
+        const messagesContainer = document.getElementById('chatMessages');
+        const confirmationDiv = document.createElement('div');
+        confirmationDiv.className = 'chat-message ai confirmation-message';
+        confirmationDiv.innerHTML = `<div class="message-bubble">${confirmationHtml}</div>`;
+        messagesContainer.appendChild(confirmationDiv);
+
+        // 滚动到底部
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // 禁用输入，直到用户做出选择
+        document.getElementById('chatInput').disabled = true;
+        document.getElementById('sendBtn').disabled = true;
+        document.getElementById('chatStatus').textContent = '请确认信息后点击"确认生成表格"';
+    }
+
+    /**
+     * 确认生成表格
+     */
+    async confirmGenerateForm() {
+        if (!this.pendingLeaveInfo) {
+            this.showToast('没有待处理的请假信息', 'error');
+            return;
+        }
+
+        try {
+            // 重新启用输入
+            document.getElementById('chatInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('chatStatus').textContent = '请输入您的消息...';
+
+            // 生成请假表格
+            await this.generateLeaveForm(this.pendingLeaveInfo);
+            
+            // 清除待处理信息
+            this.pendingLeaveInfo = null;
+
+            // 移除确认消息
+            const confirmationMessage = document.querySelector('.confirmation-message');
+            if (confirmationMessage) {
+                confirmationMessage.remove();
+            }
+
+        } catch (error) {
+            console.error('Generate form error:', error);
+            this.showToast('生成表格失败，请重试', 'error');
+        }
+    }
+
+    /**
+     * 取消生成，重新输入
+     */
+    cancelGeneration() {
+        // 重新启用输入
+        document.getElementById('chatInput').disabled = false;
+        document.getElementById('sendBtn').disabled = false;
+        document.getElementById('chatStatus').textContent = '请输入您的消息...';
+
+        // 清除待处理信息
+        this.pendingLeaveInfo = null;
+
+        // 移除确认消息
+        const confirmationMessage = document.querySelector('.confirmation-message');
+        if (confirmationMessage) {
+            confirmationMessage.remove();
+        }
+
+        // 添加AI消息引导重新输入
+        this.addMessage('ai', '好的，请重新告诉我您的请假需求。我需要了解：\n1. 请假类型\n2. 开始和结束日期\n3. 请假原因');
     }
 
     /**
@@ -901,10 +1103,19 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
     /**
      * 添加聊天消息
      */
-    addMessage(sender, content) {
+    addMessage(sender, content, messageId = null) {
         const messagesContainer = document.getElementById('chatMessages');
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${sender}`;
+        
+        // 如果是AI消息且没有提供ID，生成一个唯一ID用于流式更新
+        if (sender === 'ai' && !messageId) {
+            messageId = 'ai-message-' + Date.now();
+        }
+        
+        if (messageId) {
+            messageDiv.id = messageId;
+        }
 
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
@@ -915,6 +1126,8 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
 
         // 滚动到底部
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        return messageId;
     }
 
     /**
