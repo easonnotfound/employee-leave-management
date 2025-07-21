@@ -33,6 +33,38 @@ class LeaveManagementApp {
         this.bindEvents();
         this.initializeUI();
         this.loadEmployeeCards();
+        this.checkLibrariesLoaded();
+    }
+
+    /**
+     * 检查第三方库是否正确加载
+     */
+    checkLibrariesLoaded() {
+        // 延迟检查，确保库有时间加载
+        setTimeout(() => {
+            const missingLibs = [];
+            
+            if (typeof html2canvas === 'undefined') {
+                missingLibs.push('html2canvas');
+            }
+            
+            if (typeof window.jsPDF === 'undefined') {
+                missingLibs.push('jsPDF');
+            }
+            
+            if (missingLibs.length > 0) {
+                console.warn('以下库未正确加载:', missingLibs.join(', '));
+                console.warn('图片/PDF下载功能可能无法正常使用');
+                
+                // 在控制台提供帮助信息
+                console.info('如果遇到下载问题，请：');
+                console.info('1. 检查网络连接');
+                console.info('2. 刷新页面重试');
+                console.info('3. 使用其他浏览器');
+            } else {
+                console.info('✅ 所有第三方库已正确加载');
+            }
+        }, 2000);
     }
 
     /**
@@ -874,23 +906,38 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
         try {
             this.showLoading('正在生成图片...');
             
+            // 检查html2canvas是否可用
+            if (typeof html2canvas === 'undefined') {
+                throw new Error('html2canvas库未正确加载，无法生成图片');
+            }
+            
             const element = document.getElementById('leaveFormPreview');
+            
+            // 等待所有图片和字体加载完成
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
             const canvas = await html2canvas(element, {
                 scale: 2,
                 backgroundColor: '#ffffff',
                 useCORS: true,
-                allowTaint: true
+                allowTaint: true,
+                logging: false,
+                width: element.scrollWidth,
+                height: element.scrollHeight
             });
 
             const link = document.createElement('a');
             link.download = `请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.png`;
-            link.href = canvas.toDataURL();
+            link.href = canvas.toDataURL('image/png');
             link.click();
 
             this.showToast('图片下载成功！', 'success');
         } catch (error) {
             console.error('Download image error:', error);
-            this.showToast('图片下载失败，请重试', 'error');
+            this.showToast(`图片下载失败：${error.message}`, 'error');
+            
+            // 提供降级方案
+            this.showToast('您可以尝试手动截图或刷新页面重试', 'warning');
         } finally {
             this.hideLoading();
         }
@@ -903,32 +950,92 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
         try {
             this.showLoading('正在生成PDF...');
 
+            // 检查jsPDF是否可用
+            if (typeof window.jsPDF === 'undefined') {
+                throw new Error('jsPDF库未正确加载');
+            }
+
             const element = document.getElementById('leaveFormPreview');
+            
+            // 等待所有图片和字体加载完成
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             const canvas = await html2canvas(element, {
                 scale: 2,
                 backgroundColor: '#ffffff',
                 useCORS: true,
-                allowTaint: true
+                allowTaint: true,
+                logging: false,
+                width: element.scrollWidth,
+                height: element.scrollHeight
             });
 
             const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF.jsPDF('p', 'mm', 'a4');
+            
+            // 创建PDF - 修复语法错误
+            const pdf = new window.jsPDF('p', 'mm', 'a4');
             
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
-            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-            const imgX = (pdfWidth - imgWidth * ratio) / 2;
-            const imgY = 30;
+            
+            // 计算缩放比例，留出页边距
+            const margin = 10; // 页边距10mm
+            const availableWidth = pdfWidth - 2 * margin;
+            const availableHeight = pdfHeight - 2 * margin;
+            
+            const widthRatio = availableWidth / (imgWidth / 2); // 除以2因为scale是2
+            const heightRatio = availableHeight / (imgHeight / 2);
+            const ratio = Math.min(widthRatio, heightRatio);
+            
+            const finalWidth = (imgWidth / 2) * ratio;
+            const finalHeight = (imgHeight / 2) * ratio;
+            
+            // 居中计算
+            const imgX = (pdfWidth - finalWidth) / 2;
+            const imgY = margin;
 
-            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
-            pdf.save(`请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.pdf`);
+            // 如果内容太高，需要分页
+            if (finalHeight > availableHeight) {
+                let yPosition = imgY;
+                let remainingHeight = imgHeight / 2;
+                let pageNum = 1;
+                
+                while (remainingHeight > 0) {
+                    if (pageNum > 1) {
+                        pdf.addPage();
+                    }
+                    
+                    const pageHeight = Math.min(remainingHeight * ratio, availableHeight);
+                    const sourceY = (imgHeight / 2 - remainingHeight);
+                    
+                    // 创建裁剪的canvas
+                    const pageCanvas = document.createElement('canvas');
+                    const pageCtx = pageCanvas.getContext('2d');
+                    pageCanvas.width = imgWidth;
+                    pageCanvas.height = (pageHeight / ratio) * 2;
+                    
+                    pageCtx.drawImage(canvas, 0, sourceY * 2, imgWidth, pageCanvas.height, 0, 0, imgWidth, pageCanvas.height);
+                    
+                    const pageImgData = pageCanvas.toDataURL('image/png');
+                    pdf.addImage(pageImgData, 'PNG', imgX, imgY, finalWidth, pageHeight);
+                    
+                    remainingHeight -= pageHeight / ratio;
+                    pageNum++;
+                }
+            } else {
+                pdf.addImage(imgData, 'PNG', imgX, imgY, finalWidth, finalHeight);
+            }
+
+            // 保存文件
+            const fileName = `请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            pdf.save(fileName);
 
             this.showToast('PDF下载成功！', 'success');
         } catch (error) {
             console.error('Download PDF error:', error);
-            this.showToast('PDF下载失败，请重试', 'error');
+            this.showToast(`PDF下载失败：${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }

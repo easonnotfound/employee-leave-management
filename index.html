@@ -242,8 +242,30 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- 第三方库 -->
-    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js" 
+            onerror="console.error('html2canvas加载失败')"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+            onerror="console.error('jsPDF加载失败')"></script>
+    
+    <!-- 备用CDN -->
+    <script>
+        // 检查库是否正确加载，如果失败则使用备用CDN
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof html2canvas === 'undefined') {
+                console.warn('html2canvas未加载，尝试备用CDN...');
+                const script1 = document.createElement('script');
+                script1.src = 'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js';
+                document.head.appendChild(script1);
+            }
+            
+            if (typeof window.jsPDF === 'undefined') {
+                console.warn('jsPDF未加载，尝试备用CDN...');
+                const script2 = document.createElement('script');
+                script2.src = 'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js';
+                document.head.appendChild(script2);
+            }
+        });
+    </script>
     
     <!-- JavaScript文件 -->
     <script src="js/employee-data.js"></script>
