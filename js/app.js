@@ -7,7 +7,7 @@
 const AI_CONFIG = {
     apiKey: 'sk-VXX8gTqtw2nQ0kzYq7VG4h1f9IBaB6kJd0xfUoPK9P83IsON',
     baseURL: 'https://yunwu.ai/v1',
-    model: 'gpt-4', // 可以根据需要调整模型
+    model: 'claude-sonnet-4-20250514', // 可以根据需要调整模型
     maxTokens: 2000,
     temperature: 0.7
 };
@@ -72,11 +72,19 @@ class LeaveManagementApp {
 
         // 请假单操作事件
         document.getElementById('editBtn')?.addEventListener('click', () => {
-            this.editLeaveRequest();
+            this.toggleEditMode();
         });
 
-        document.getElementById('downloadBtn')?.addEventListener('click', () => {
-            this.downloadLeaveForm();
+        document.getElementById('saveBtn')?.addEventListener('click', () => {
+            this.saveEditedForm();
+        });
+
+        document.getElementById('downloadImageBtn')?.addEventListener('click', () => {
+            this.downloadAsImage();
+        });
+
+        document.getElementById('downloadPdfBtn')?.addEventListener('click', () => {
+            this.downloadAsPdf();
         });
 
         // 管理员后台事件
@@ -497,36 +505,73 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                     <!-- 标准表格信息 - 突出显示核心字段 -->
                     <div class="standard-table-section">
                         <h3>📋 标准请假信息表</h3>
-                        <table class="standard-leave-table">
+                        <table class="standard-leave-table" id="standardTable">
                             <tbody>
                                 <tr>
                                     <td class="field-label">员工姓名</td>
-                                    <td class="field-value">${employeeSummary.basic.name}</td>
+                                    <td class="field-value">
+                                        <span class="display-mode">${employeeSummary.basic.name}</span>
+                                        <input type="text" class="editable-field hidden" data-field="employeeName" value="${employeeSummary.basic.name}">
+                                    </td>
                                     <td class="field-label">工号</td>
-                                    <td class="field-value">${employeeSummary.basic.id}</td>
+                                    <td class="field-value">
+                                        <span class="display-mode">${employeeSummary.basic.id}</span>
+                                        <input type="text" class="editable-field hidden" data-field="employeeId" value="${employeeSummary.basic.id}">
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="field-label">请假类型</td>
-                                    <td class="field-value leave-type">${summary.leaveType}</td>
+                                    <td class="field-value leave-type">
+                                        <span class="display-mode">${summary.leaveType}</span>
+                                        <select class="editable-field hidden" data-field="leaveType">
+                                            <option value="年假" ${summary.leaveType === '年假' ? 'selected' : ''}>年假</option>
+                                            <option value="病假" ${summary.leaveType === '病假' ? 'selected' : ''}>病假</option>
+                                            <option value="事假" ${summary.leaveType === '事假' ? 'selected' : ''}>事假</option>
+                                            <option value="婚假" ${summary.leaveType === '婚假' ? 'selected' : ''}>婚假</option>
+                                            <option value="产假" ${summary.leaveType === '产假' ? 'selected' : ''}>产假</option>
+                                            <option value="陪产假" ${summary.leaveType === '陪产假' ? 'selected' : ''}>陪产假</option>
+                                            <option value="丧假" ${summary.leaveType === '丧假' ? 'selected' : ''}>丧假</option>
+                                            <option value="调休假" ${summary.leaveType === '调休假' ? 'selected' : ''}>调休假</option>
+                                        </select>
+                                    </td>
                                     <td class="field-label">请假时长</td>
-                                    <td class="field-value leave-days">${summary.days} 天</td>
+                                    <td class="field-value leave-days">
+                                        <span class="display-mode">${summary.days} 天</span>
+                                        <input type="number" class="editable-field hidden" data-field="leaveDays" value="${summary.days}" min="1" max="365"> 天
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="field-label">请假日期</td>
-                                    <td class="field-value" colspan="3">${summary.startDate} 至 ${summary.endDate}</td>
+                                    <td class="field-value" colspan="3">
+                                        <span class="display-mode">${summary.startDate} 至 ${summary.endDate}</span>
+                                        <div class="edit-mode hidden">
+                                            <input type="date" class="editable-field" data-field="startDate" value="${summary.startDate}">
+                                            至
+                                            <input type="date" class="editable-field" data-field="endDate" value="${summary.endDate}">
+                                        </div>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="field-label">剩余年假时长</td>
                                     <td class="field-value balance-highlight">${employeeSummary.leave.remainingAnnualLeave} 天</td>
                                     <td class="field-label">申请时间</td>
-                                    <td class="field-value">${summary.applicationTime}</td>
+                                    <td class="field-value">
+                                        <span class="display-mode">${summary.applicationTime}</span>
+                                        <input type="datetime-local" class="editable-field hidden" data-field="applicationTime" value="${new Date(summary.applicationTime).toISOString().slice(0, 16)}">
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="field-label">请假原因</td>
-                                    <td class="field-value" colspan="3">${summary.reason || '个人事务'}</td>
+                                    <td class="field-value" colspan="3">
+                                        <span class="display-mode">${summary.reason || '个人事务'}</span>
+                                        <textarea class="editable-field hidden" data-field="reason" rows="2">${summary.reason || '个人事务'}</textarea>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
+                        <div class="edit-instructions hidden" id="editInstructions">
+                            <p><i class="fas fa-info-circle"></i> 点击字段进行编辑，完成后点击"保存修改"按钮</p>
+                        </div>
                     </div>
 
                     <div class="info-section">
@@ -708,49 +753,209 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
     }
 
     /**
-     * 编辑请假申请
+     * 切换编辑模式
      */
-    editLeaveRequest() {
-        this.hideSection('previewSection');
-        this.showSection('chatSection');
-        
-        this.addMessage('ai', '您想修改哪些信息？我可以帮您调整请假类型、时间或其他详细信息。');
+    toggleEditMode() {
+        const table = document.getElementById('standardTable');
+        const editBtn = document.getElementById('editBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const instructions = document.getElementById('editInstructions');
+
+        if (table.classList.contains('edit-mode')) {
+            // 退出编辑模式
+            this.exitEditMode();
+        } else {
+            // 进入编辑模式
+            table.classList.add('edit-mode');
+            editBtn.innerHTML = '<i class="fas fa-times"></i> 取消编辑';
+            saveBtn.classList.remove('hidden');
+            instructions.classList.remove('hidden');
+
+            // 显示编辑字段，隐藏显示字段
+            document.querySelectorAll('.display-mode').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.editable-field').forEach(el => el.classList.remove('hidden'));
+            document.querySelectorAll('.edit-mode').forEach(el => el.classList.remove('hidden'));
+
+            this.showToast('编辑模式已开启，可以修改表格内容', 'success');
+        }
     }
 
     /**
-     * 下载请假单
+     * 退出编辑模式
      */
-    downloadLeaveForm() {
-        // 这里可以集成PDF生成库，如jsPDF
-        this.showToast('请假单下载功能正在开发中...', 'warning');
-        
-        // 示例：简单的打印功能
-        const printContent = document.getElementById('leaveFormPreview').innerHTML;
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>请假申请表</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    .leave-form { max-width: 800px; margin: 0 auto; }
-                    .form-header h2 { text-align: center; margin-bottom: 10px; }
-                    .info-section, .leave-section, .balance-section, .approval-section { margin: 20px 0; }
-                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                    .info-item { margin: 5px 0; }
-                    .info-item label { font-weight: bold; }
-                    .full-width { grid-column: 1 / -1; }
-                    .approval-flow { display: flex; flex-wrap: wrap; gap: 10px; }
-                    .approval-step { border: 1px solid #ddd; padding: 10px; border-radius: 5px; }
-                    @media print { body { margin: 0; } }
-                </style>
-            </head>
-            <body>${printContent}</body>
-            </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
+    exitEditMode() {
+        const table = document.getElementById('standardTable');
+        const editBtn = document.getElementById('editBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const instructions = document.getElementById('editInstructions');
+
+        table.classList.remove('edit-mode');
+        editBtn.innerHTML = '<i class="fas fa-edit"></i> 编辑表格';
+        saveBtn.classList.add('hidden');
+        instructions.classList.add('hidden');
+
+        // 隐藏编辑字段，显示显示字段
+        document.querySelectorAll('.display-mode').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('.editable-field').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.edit-mode').forEach(el => el.classList.add('hidden'));
+    }
+
+    /**
+     * 保存编辑后的表格
+     */
+    saveEditedForm() {
+        try {
+            // 收集所有编辑的数据
+            const editedData = {};
+            document.querySelectorAll('.editable-field').forEach(field => {
+                const fieldName = field.getAttribute('data-field');
+                editedData[fieldName] = field.value;
+            });
+
+            // 验证必填字段
+            const requiredFields = ['employeeName', 'leaveType', 'startDate', 'endDate', 'reason'];
+            const missingFields = requiredFields.filter(field => !editedData[field] || editedData[field].trim() === '');
+            
+            if (missingFields.length > 0) {
+                this.showToast('请填写所有必填字段', 'error');
+                return;
+            }
+
+            // 更新显示内容
+            this.updateDisplayContent(editedData);
+
+            // 退出编辑模式
+            this.exitEditMode();
+
+            // 更新请假记录
+            this.updateLeaveRecord(editedData);
+
+            this.showToast('表格已保存！', 'success');
+
+        } catch (error) {
+            console.error('Save form error:', error);
+            this.showToast('保存失败，请重试', 'error');
+        }
+    }
+
+    /**
+     * 更新显示内容
+     */
+    updateDisplayContent(editedData) {
+        // 更新员工姓名
+        if (editedData.employeeName) {
+            document.querySelector('[data-field="employeeName"]').parentElement.querySelector('.display-mode').textContent = editedData.employeeName;
+        }
+
+        // 更新请假类型
+        if (editedData.leaveType) {
+            document.querySelector('[data-field="leaveType"]').parentElement.querySelector('.display-mode').textContent = editedData.leaveType;
+        }
+
+        // 更新请假天数
+        if (editedData.leaveDays) {
+            document.querySelector('[data-field="leaveDays"]').parentElement.querySelector('.display-mode').textContent = editedData.leaveDays + ' 天';
+        }
+
+        // 更新请假日期
+        if (editedData.startDate && editedData.endDate) {
+            const dateDisplay = document.querySelector('[data-field="startDate"]').closest('.field-value').querySelector('.display-mode');
+            dateDisplay.textContent = `${editedData.startDate} 至 ${editedData.endDate}`;
+        }
+
+        // 更新申请时间
+        if (editedData.applicationTime) {
+            const timeDisplay = new Date(editedData.applicationTime).toLocaleString('zh-CN');
+            document.querySelector('[data-field="applicationTime"]').parentElement.querySelector('.display-mode').textContent = timeDisplay;
+        }
+
+        // 更新请假原因
+        if (editedData.reason) {
+            document.querySelector('[data-field="reason"]').parentElement.querySelector('.display-mode').textContent = editedData.reason;
+        }
+    }
+
+    /**
+     * 更新请假记录
+     */
+    updateLeaveRecord(editedData) {
+        if (this.leaveRequest) {
+            // 更新当前请假申请对象
+            this.leaveRequest.employee.name = editedData.employeeName || this.leaveRequest.employee.name;
+            this.leaveRequest.leaveType = editedData.leaveType || this.leaveRequest.leaveType;
+            this.leaveRequest.startDate = editedData.startDate || this.leaveRequest.startDate;
+            this.leaveRequest.endDate = editedData.endDate || this.leaveRequest.endDate;
+            this.leaveRequest.days = parseInt(editedData.leaveDays) || this.leaveRequest.days;
+            this.leaveRequest.reason = editedData.reason || this.leaveRequest.reason;
+            this.leaveRequest.applicationTime = editedData.applicationTime ? new Date(editedData.applicationTime).toLocaleString('zh-CN') : this.leaveRequest.applicationTime;
+        }
+    }
+
+    /**
+     * 下载为图片
+     */
+    async downloadAsImage() {
+        try {
+            this.showLoading('正在生成图片...');
+            
+            const element = document.getElementById('leaveFormPreview');
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                allowTaint: true
+            });
+
+            const link = document.createElement('a');
+            link.download = `请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+
+            this.showToast('图片下载成功！', 'success');
+        } catch (error) {
+            console.error('Download image error:', error);
+            this.showToast('图片下载失败，请重试', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
+     * 下载为PDF
+     */
+    async downloadAsPdf() {
+        try {
+            this.showLoading('正在生成PDF...');
+
+            const element = document.getElementById('leaveFormPreview');
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                allowTaint: true
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF.jsPDF('p', 'mm', 'a4');
+            
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const imgX = (pdfWidth - imgWidth * ratio) / 2;
+            const imgY = 30;
+
+            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+            pdf.save(`请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+            this.showToast('PDF下载成功！', 'success');
+        } catch (error) {
+            console.error('Download PDF error:', error);
+            this.showToast('PDF下载失败，请重试', 'error');
+        } finally {
+            this.hideLoading();
+        }
     }
 
     /**

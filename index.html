@@ -128,11 +128,19 @@
                         <div class="preview-actions">
                             <button class="secondary-btn" id="editBtn">
                                 <i class="fas fa-edit"></i>
-                                修改申请
+                                编辑表格
                             </button>
-                            <button class="primary-btn" id="downloadBtn">
-                                <i class="fas fa-download"></i>
-                                下载请假单
+                            <button class="success-btn hidden" id="saveBtn">
+                                <i class="fas fa-save"></i>
+                                保存修改
+                            </button>
+                            <button class="primary-btn" id="downloadImageBtn">
+                                <i class="fas fa-image"></i>
+                                下载图片
+                            </button>
+                            <button class="primary-btn" id="downloadPdfBtn">
+                                <i class="fas fa-file-pdf"></i>
+                                下载PDF
                             </button>
                         </div>
                     </div>
@@ -233,6 +241,10 @@
     <!-- Toast消息 -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- 第三方库 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
     <!-- JavaScript文件 -->
     <script src="js/employee-data.js"></script>
     <script src="js/leave-rules.js"></script>

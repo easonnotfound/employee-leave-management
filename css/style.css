@@ -714,6 +714,176 @@ body {
     border-radius: var(--radius-sm);
 }
 
+/* 可编辑表格样式 */
+.editable-field {
+    border: 2px dashed var(--primary-blue);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: white;
+    cursor: text;
+    transition: all var(--transition-fast);
+}
+
+.editable-field:hover {
+    border-color: var(--primary-blue-hover);
+    background: var(--gray-50);
+}
+
+.editable-field:focus {
+    outline: none;
+    border-style: solid;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.editable-field.editing {
+    border-style: solid;
+    background: white;
+}
+
+/* 编辑模式下的表格样式 */
+.standard-leave-table.edit-mode .field-value {
+    position: relative;
+}
+
+.standard-leave-table.edit-mode .field-value:not(.leave-type):not(.leave-days):not(.balance-highlight) {
+    background: white;
+    color: var(--gray-800);
+}
+
+/* 编辑提示 */
+.edit-hint {
+    position: absolute;
+    top: -10px;
+    right: 5px;
+    background: var(--primary-blue);
+    color: white;
+    font-size: var(--font-size-xs);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.editable-field:hover .edit-hint {
+    opacity: 1;
+}
+
+/* 成功按钮样式 */
+.success-btn {
+    background: var(--success-green);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-6);
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 120px;
+    justify-content: center;
+}
+
+.success-btn:hover {
+    background: #2fb344;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
+}
+
+.success-btn:disabled {
+    background: var(--gray-300);
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* 编辑指令样式 */
+.edit-instructions {
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    background: rgba(0, 122, 255, 0.1);
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--primary-blue);
+}
+
+.edit-instructions p {
+    margin: 0;
+    color: var(--primary-blue);
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.edit-instructions i {
+    color: var(--primary-blue);
+}
+
+/* 编辑字段样式优化 */
+.editable-field {
+    width: 100%;
+    border: 2px dashed var(--primary-blue);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: white;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family);
+    transition: all var(--transition-fast);
+}
+
+.editable-field[type="number"],
+.editable-field[type="date"],
+.editable-field[type="datetime-local"] {
+    min-width: 120px;
+}
+
+.editable-field select {
+    border: 2px dashed var(--primary-blue);
+    background: white;
+    cursor: pointer;
+}
+
+.editable-field textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+/* 日期编辑区域样式 */
+.edit-mode {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.edit-mode input[type="date"] {
+    flex: 1;
+    min-width: 140px;
+}
+
+/* 响应式编辑区域 */
+@media (max-width: 768px) {
+    .edit-mode {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .edit-mode input[type="date"] {
+        min-width: auto;
+        width: 100%;
+    }
+    
+    .preview-actions {
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+    
+    .preview-actions button {
+        width: 100%;
+    }
+}
+
 .form-header {
     text-align: center;
     margin-bottom: var(--space-8);
