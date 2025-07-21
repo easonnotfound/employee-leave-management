@@ -596,31 +596,7 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                         </div>
                     </div>
 
-                    <div class="leave-section">
-                        <h3>请假信息</h3>
-                        <div class="info-grid">
-                            <div class="info-item">
-                                <label>请假类型：</label>
-                                <span class="leave-type">${summary.leaveType}</span>
-                            </div>
-                            <div class="info-item">
-                                <label>请假时间：</label>
-                                <span>${summary.startDate} 至 ${summary.endDate}</span>
-                            </div>
-                            <div class="info-item">
-                                <label>请假天数：</label>
-                                <span class="leave-days">${summary.days} 天</span>
-                            </div>
-                            <div class="info-item">
-                                <label>申请时间：</label>
-                                <span>${summary.applicationTime}</span>
-                            </div>
-                        </div>
-                        <div class="info-item full-width">
-                            <label>请假原因：</label>
-                            <div class="reason-text">${summary.reason || '个人事务'}</div>
-                        </div>
-                    </div>
+
 
                     <div class="balance-section">
                         <h3>假期余额</h3>
