@@ -13,6 +13,128 @@ const AI_CONFIG = {
 };
 
 /**
+ * 时间处理工具类
+ */
+class TimeUtils {
+    /**
+     * 获取当前精确时间
+     */
+    static getCurrentTime() {
+        return new Date();
+    }
+
+    /**
+     * 格式化日期为YYYY-MM-DD格式
+     */
+    static formatDate(date) {
+        if (!(date instanceof Date)) {
+            date = new Date(date);
+        }
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    /**
+     * 格式化时间为中文格式
+     */
+    static formatDateTime(date) {
+        if (!(date instanceof Date)) {
+            date = new Date(date);
+        }
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+    }
+
+    /**
+     * 计算两个日期之间的天数（包含首尾）
+     */
+    static calculateDays(startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        // 设置时间为当天开始，避免时区问题
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        
+        const timeDiff = end.getTime() - start.getTime();
+        const dayDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+        
+        return dayDiff + 1; // 包含首尾两天
+    }
+
+    /**
+     * 验证日期是否合理
+     */
+    static validateLeaveDate(startDate, endDate) {
+        const now = this.getCurrentTime();
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        const errors = [];
+        
+        // 验证日期格式
+        if (isNaN(start.getTime())) {
+            errors.push('开始日期格式不正确');
+        }
+        if (isNaN(end.getTime())) {
+            errors.push('结束日期格式不正确');
+        }
+        
+        if (errors.length > 0) {
+            return { valid: false, errors };
+        }
+        
+        // 验证日期逻辑
+        if (end < start) {
+            errors.push('结束日期不能早于开始日期');
+        }
+        
+        // 检查是否申请的是过去的日期（允许今天）
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        start.setHours(0, 0, 0, 0);
+        
+        if (start < today) {
+            errors.push('不能申请过去的日期');
+        }
+        
+        // 检查请假天数是否合理（最多365天）
+        const days = this.calculateDays(startDate, endDate);
+        if (days > 365) {
+            errors.push('单次请假不能超过365天');
+        }
+        
+        return {
+            valid: errors.length === 0,
+            errors,
+            days
+        };
+    }
+
+    /**
+     * 计算提前申请天数
+     */
+    static calculateAdvanceNoticeDays(startDate) {
+        const now = this.getCurrentTime();
+        const start = new Date(startDate);
+        
+        now.setHours(0, 0, 0, 0);
+        start.setHours(0, 0, 0, 0);
+        
+        const timeDiff = start.getTime() - now.getTime();
+        return Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    }
+}
+
+/**
  * 主应用类
  */
 class LeaveManagementApp {
@@ -243,6 +365,9 @@ class LeaveManagementApp {
 
         this.addMessage('ai', welcomeMessage);
 
+        // 获取当前日期用于AI提示
+        const todayDate = TimeUtils.formatDate(TimeUtils.getCurrentTime());
+        
         // 初始化对话状态
         this.chatHistory = [
             {
@@ -256,22 +381,35 @@ class LeaveManagementApp {
 - 已用病假：${summary.leave.usedSickLeave}天
 - 已用事假：${summary.leave.usedPersonalLeave}天
 
+今天的日期是：${todayDate}
+
 你的任务是系统地收集以下信息来生成标准请假表格：
 【必需信息】
 1. 请假类型（年假/病假/事假/婚假/产假/陪产假/丧假/调休假）
-2. 请假开始日期（YYYY-MM-DD格式）
-3. 请假结束日期（YYYY-MM-DD格式）
+2. 请假开始日期（YYYY-MM-DD格式，不能是过去的日期）
+3. 请假结束日期（YYYY-MM-DD格式，必须不早于开始日期）
 4. 请假原因（简要说明）
 
 【工作流程】
 1. 首先询问员工要申请什么类型的假期
-2. 然后询问具体的请假时间（开始和结束日期）
+2. 然后询问具体的请假时间：
+   - 明确告知今天是${todayDate}
+   - 开始日期必须是今天或之后的日期
+   - 结束日期必须不早于开始日期
+   - 请用YYYY-MM-DD格式（如：2025-01-15）
 3. 询问请假原因
 4. 确认所有信息无误后，说"我现在为您生成请假申请表"
+
+【日期验证规则】
+- 不能申请过去的日期
+- 结束日期不能早于开始日期  
+- 单次请假不能超过365天
+- 建议提前至少1天申请（紧急情况除外）
 
 【注意事项】
 - 逐步收集信息，不要一次询问所有内容
 - 根据公司制度提供专业建议
+- 如果用户输入的日期有问题，要明确指出并要求重新输入
 - 保持友好、专业的对话风格
 - 当收集完整信息后，明确说出生成表格的指令
 
@@ -481,26 +619,48 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
      */
     async generateLeaveForm(leaveInfo) {
         try {
-            // 计算请假天数
-            const startDate = new Date(leaveInfo.startDate);
-            const endDate = new Date(leaveInfo.endDate);
-            const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+            // 使用TimeUtils验证和处理日期
+            const validation = TimeUtils.validateLeaveDate(leaveInfo.startDate, leaveInfo.endDate);
+            
+            if (!validation.valid) {
+                const errorMessage = `请假日期有问题：\n${validation.errors.join('\n')}\n\n请重新输入正确的日期信息。`;
+                this.addMessage('ai', errorMessage);
+                return;
+            }
 
-            // 计算提前申请天数
-            const today = new Date();
-            const advanceNoticeDays = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
+            // 使用工具类计算精确的日期信息
+            const currentTime = TimeUtils.getCurrentTime();
+            const days = validation.days;
+            const advanceNoticeDays = TimeUtils.calculateAdvanceNoticeDays(leaveInfo.startDate);
+
+            // 标准化日期格式
+            const formattedStartDate = TimeUtils.formatDate(leaveInfo.startDate);
+            const formattedEndDate = TimeUtils.formatDate(leaveInfo.endDate);
+            const applicationDate = TimeUtils.formatDate(currentTime);
+            const applicationTime = TimeUtils.formatDateTime(currentTime);
+
+            console.log('请假日期计算详情:', {
+                原始开始日期: leaveInfo.startDate,
+                原始结束日期: leaveInfo.endDate,
+                格式化开始日期: formattedStartDate,
+                格式化结束日期: formattedEndDate,
+                请假天数: days,
+                提前申请天数: advanceNoticeDays,
+                申请日期: applicationDate,
+                申请时间: applicationTime
+            });
 
             // 创建请假申请对象
             this.leaveRequest = {
                 employee: this.currentEmployee,
                 leaveType: leaveInfo.leaveType,
-                startDate: leaveInfo.startDate,
-                endDate: leaveInfo.endDate,
+                startDate: formattedStartDate,
+                endDate: formattedEndDate,
                 days: days,
                 reason: leaveInfo.reason,
                 advanceNoticeDays: advanceNoticeDays,
-                applicationDate: new Date().toISOString().split('T')[0],
-                applicationTime: new Date().toLocaleString('zh-CN')
+                applicationDate: applicationDate,
+                applicationTime: applicationTime
             };
 
             // 生成请假摘要
@@ -526,6 +686,21 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
         const previewDiv = document.getElementById('leaveFormPreview');
         const employee = summary.employee;
         const employeeSummary = window.employeeManager.getEmployeeSummary(employee);
+
+        // 确保申请时间总是显示最新的实时时间
+        const currentTime = TimeUtils.getCurrentTime();
+        const realtimeApplicationTime = TimeUtils.formatDateTime(currentTime);
+        const realtimeApplicationDate = TimeUtils.formatDate(currentTime);
+        
+        // 更新summary中的申请时间为实时时间
+        summary.applicationTime = realtimeApplicationTime;
+        summary.applicationDate = realtimeApplicationDate;
+        
+        console.log('显示请假单预览 - 实时申请时间:', {
+            当前时间: currentTime,
+            格式化申请时间: realtimeApplicationTime,
+            格式化申请日期: realtimeApplicationDate
+        });
 
         const html = `
             <div class="leave-form">
@@ -706,6 +881,9 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
         
         // 保存请假记录
         this.saveLeaveRecord(summary);
+        
+        // 提示用户申请时间已更新为实时时间
+        this.showToast(`✅ 请假申请表已生成，申请时间：${realtimeApplicationTime}`, 'success');
     }
 
     /**
@@ -774,19 +952,53 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             // 退出编辑模式
             this.exitEditMode();
         } else {
-            // 进入编辑模式
+            // 进入编辑模式前，先更新申请时间为当前实时时间
+            this.updateApplicationTimeToNow();
+            
             table.classList.add('edit-mode');
             editBtn.innerHTML = '<i class="fas fa-times"></i> 取消编辑';
             saveBtn.classList.remove('hidden');
             instructions.classList.remove('hidden');
 
-            // 显示编辑字段，隐藏显示字段
-            document.querySelectorAll('.display-mode').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.editable-field').forEach(el => el.classList.remove('hidden'));
-            document.querySelectorAll('.edit-mode').forEach(el => el.classList.remove('hidden'));
+                    // 显示编辑字段，隐藏显示字段
+        document.querySelectorAll('.display-mode').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.editable-field').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('.edit-mode').forEach(el => el.classList.remove('hidden'));
 
-            this.showToast('编辑模式已开启，可以修改表格内容', 'success');
+        this.showToast('编辑模式已开启，申请时间已更新为当前实时时间', 'success');
         }
+    }
+
+    /**
+     * 更新申请时间为当前实时时间
+     */
+    updateApplicationTimeToNow() {
+        const currentTime = TimeUtils.getCurrentTime();
+        const realtimeApplicationTime = TimeUtils.formatDateTime(currentTime);
+        
+        // 更新显示的申请时间
+        const applicationTimeDisplay = document.querySelector('[data-field="applicationTime"]').parentElement.querySelector('.display-mode');
+        if (applicationTimeDisplay) {
+            applicationTimeDisplay.textContent = realtimeApplicationTime;
+        }
+        
+        // 更新编辑字段的申请时间
+        const applicationTimeField = document.querySelector('[data-field="applicationTime"]');
+        if (applicationTimeField) {
+            applicationTimeField.value = currentTime.toISOString().slice(0, 16);
+        }
+        
+        // 更新请假记录中的申请时间
+        if (this.leaveRequest) {
+            this.leaveRequest.applicationTime = realtimeApplicationTime;
+            this.leaveRequest.applicationDate = TimeUtils.formatDate(currentTime);
+        }
+        
+        console.log('更新申请时间为实时时间:', {
+            当前时间: currentTime,
+            格式化时间: realtimeApplicationTime,
+            ISO格式: currentTime.toISOString().slice(0, 16)
+        });
     }
 
     /**
@@ -828,6 +1040,34 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             if (missingFields.length > 0) {
                 this.showToast('请填写所有必填字段', 'error');
                 return;
+            }
+
+            // 验证日期（如果日期有修改）
+            if (editedData.startDate && editedData.endDate) {
+                const validation = TimeUtils.validateLeaveDate(editedData.startDate, editedData.endDate);
+                
+                if (!validation.valid) {
+                    const errorMessage = `日期验证失败：${validation.errors.join('、')}`;
+                    this.showToast(errorMessage, 'error');
+                    return;
+                }
+
+                // 重新计算请假天数
+                const calculatedDays = validation.days;
+                editedData.leaveDays = calculatedDays;
+                
+                // 更新表单中的天数显示
+                const daysField = document.querySelector('[data-field="leaveDays"]');
+                if (daysField) {
+                    daysField.value = calculatedDays;
+                }
+
+                console.log('编辑后的日期计算:', {
+                    开始日期: editedData.startDate,
+                    结束日期: editedData.endDate,
+                    计算天数: calculatedDays,
+                    提前申请天数: TimeUtils.calculateAdvanceNoticeDays(editedData.startDate)
+                });
             }
 
             // 更新显示内容
@@ -892,11 +1132,32 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             // 更新当前请假申请对象
             this.leaveRequest.employee.name = editedData.employeeName || this.leaveRequest.employee.name;
             this.leaveRequest.leaveType = editedData.leaveType || this.leaveRequest.leaveType;
-            this.leaveRequest.startDate = editedData.startDate || this.leaveRequest.startDate;
-            this.leaveRequest.endDate = editedData.endDate || this.leaveRequest.endDate;
-            this.leaveRequest.days = parseInt(editedData.leaveDays) || this.leaveRequest.days;
+            
+            // 处理日期更新
+            if (editedData.startDate && editedData.endDate) {
+                this.leaveRequest.startDate = TimeUtils.formatDate(editedData.startDate);
+                this.leaveRequest.endDate = TimeUtils.formatDate(editedData.endDate);
+                this.leaveRequest.days = parseInt(editedData.leaveDays) || TimeUtils.calculateDays(editedData.startDate, editedData.endDate);
+                this.leaveRequest.advanceNoticeDays = TimeUtils.calculateAdvanceNoticeDays(editedData.startDate);
+            } else {
+                this.leaveRequest.days = parseInt(editedData.leaveDays) || this.leaveRequest.days;
+            }
+            
             this.leaveRequest.reason = editedData.reason || this.leaveRequest.reason;
-            this.leaveRequest.applicationTime = editedData.applicationTime ? new Date(editedData.applicationTime).toLocaleString('zh-CN') : this.leaveRequest.applicationTime;
+            
+            // 处理申请时间更新 - 如果用户修改了申请时间则使用用户的时间，否则使用当前实时时间
+            if (editedData.applicationTime) {
+                // 用户手动修改了申请时间
+                this.leaveRequest.applicationTime = TimeUtils.formatDateTime(new Date(editedData.applicationTime));
+                this.leaveRequest.applicationDate = TimeUtils.formatDate(new Date(editedData.applicationTime));
+            } else {
+                // 用户没有修改申请时间，使用当前实时时间
+                const currentTime = TimeUtils.getCurrentTime();
+                this.leaveRequest.applicationTime = TimeUtils.formatDateTime(currentTime);
+                this.leaveRequest.applicationDate = TimeUtils.formatDate(currentTime);
+            }
+
+            console.log('更新后的请假记录:', this.leaveRequest);
         }
     }
 
@@ -911,6 +1172,9 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             if (typeof html2canvas === 'undefined') {
                 throw new Error('html2canvas库未正确加载，无法生成图片');
             }
+            
+            // 下载前确保申请时间为最新实时时间
+            this.updateApplicationTimeToNow();
             
             const element = document.getElementById('leaveFormPreview');
             
@@ -962,6 +1226,9 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
                 throw new Error('jsPDF库未正确加载，请刷新页面重试');
             }
+
+            // 下载前确保申请时间为最新实时时间
+            this.updateApplicationTimeToNow();
 
             const element = document.getElementById('leaveFormPreview');
             
