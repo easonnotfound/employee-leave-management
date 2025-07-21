@@ -48,7 +48,7 @@ class LeaveManagementApp {
                 missingLibs.push('html2canvas');
             }
             
-            if (typeof window.jsPDF === 'undefined') {
+            if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
                 missingLibs.push('jsPDF');
             }
             
@@ -63,6 +63,7 @@ class LeaveManagementApp {
                 console.info('3. 使用其他浏览器');
             } else {
                 console.info('✅ 所有第三方库已正确加载');
+                console.info('jsPDF版本:', window.jspdf.version || '未知');
             }
         }, 2000);
     }
@@ -926,9 +927,16 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                 height: element.scrollHeight
             });
 
+            const today = new Date();
+            const dateStr = today.getFullYear() + '-' + 
+                           String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(today.getDate()).padStart(2, '0');
+            const employeeName = this.leaveRequest?.employee?.name || '员工';
+            
             const link = document.createElement('a');
-            link.download = `请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.png`;
+            link.download = `请假申请表_${employeeName}_${dateStr}.png`;
             link.href = canvas.toDataURL('image/png');
+            console.log('准备下载图片文件:', link.download);
             link.click();
 
             this.showToast('图片下载成功！', 'success');
@@ -951,8 +959,8 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             this.showLoading('正在生成PDF...');
 
             // 检查jsPDF是否可用
-            if (typeof window.jsPDF === 'undefined') {
-                throw new Error('jsPDF库未正确加载');
+            if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+                throw new Error('jsPDF库未正确加载，请刷新页面重试');
             }
 
             const element = document.getElementById('leaveFormPreview');
@@ -972,8 +980,9 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
 
             const imgData = canvas.toDataURL('image/png');
             
-            // 创建PDF - 修复语法错误
-            const pdf = new window.jsPDF('p', 'mm', 'a4');
+            // 创建PDF - 使用正确的新版本语法
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
             
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -985,51 +994,35 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
             const availableWidth = pdfWidth - 2 * margin;
             const availableHeight = pdfHeight - 2 * margin;
             
-            const widthRatio = availableWidth / (imgWidth / 2); // 除以2因为scale是2
-            const heightRatio = availableHeight / (imgHeight / 2);
+            // 简化计算：将canvas尺寸转换为PDF尺寸
+            const pixelToMm = 0.264583; // 1px = 0.264583mm at 96dpi
+            const imgWidthMm = (imgWidth / 2) * pixelToMm; // 除以2因为scale是2
+            const imgHeightMm = (imgHeight / 2) * pixelToMm;
+            
+            // 计算适合页面的尺寸
+            const widthRatio = availableWidth / imgWidthMm;
+            const heightRatio = availableHeight / imgHeightMm;
             const ratio = Math.min(widthRatio, heightRatio);
             
-            const finalWidth = (imgWidth / 2) * ratio;
-            const finalHeight = (imgHeight / 2) * ratio;
+            const finalWidth = imgWidthMm * ratio;
+            const finalHeight = imgHeightMm * ratio;
             
             // 居中计算
             const imgX = (pdfWidth - finalWidth) / 2;
             const imgY = margin;
 
-            // 如果内容太高，需要分页
-            if (finalHeight > availableHeight) {
-                let yPosition = imgY;
-                let remainingHeight = imgHeight / 2;
-                let pageNum = 1;
-                
-                while (remainingHeight > 0) {
-                    if (pageNum > 1) {
-                        pdf.addPage();
-                    }
-                    
-                    const pageHeight = Math.min(remainingHeight * ratio, availableHeight);
-                    const sourceY = (imgHeight / 2 - remainingHeight);
-                    
-                    // 创建裁剪的canvas
-                    const pageCanvas = document.createElement('canvas');
-                    const pageCtx = pageCanvas.getContext('2d');
-                    pageCanvas.width = imgWidth;
-                    pageCanvas.height = (pageHeight / ratio) * 2;
-                    
-                    pageCtx.drawImage(canvas, 0, sourceY * 2, imgWidth, pageCanvas.height, 0, 0, imgWidth, pageCanvas.height);
-                    
-                    const pageImgData = pageCanvas.toDataURL('image/png');
-                    pdf.addImage(pageImgData, 'PNG', imgX, imgY, finalWidth, pageHeight);
-                    
-                    remainingHeight -= pageHeight / ratio;
-                    pageNum++;
-                }
-            } else {
-                pdf.addImage(imgData, 'PNG', imgX, imgY, finalWidth, finalHeight);
-            }
+            // 添加图片到PDF（暂时简化，不处理分页）
+            pdf.addImage(imgData, 'PNG', imgX, imgY, finalWidth, finalHeight);
 
             // 保存文件
-            const fileName = `请假申请表_${this.leaveRequest?.employee?.name || '员工'}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            const today = new Date();
+            const dateStr = today.getFullYear() + '-' + 
+                           String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(today.getDate()).padStart(2, '0');
+            const employeeName = this.leaveRequest?.employee?.name || '员工';
+            const fileName = `请假申请表_${employeeName}_${dateStr}.pdf`;
+            
+            console.log('准备保存PDF文件:', fileName);
             pdf.save(fileName);
 
             this.showToast('PDF下载成功！', 'success');

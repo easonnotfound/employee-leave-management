@@ -244,27 +244,55 @@
     <!-- 第三方库 -->
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js" 
             onerror="console.error('html2canvas加载失败')"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.1/jspdf.umd.min.js"
             onerror="console.error('jsPDF加载失败')"></script>
     
     <!-- 备用CDN -->
     <script>
         // 检查库是否正确加载，如果失败则使用备用CDN
         document.addEventListener('DOMContentLoaded', function() {
-            if (typeof html2canvas === 'undefined') {
-                console.warn('html2canvas未加载，尝试备用CDN...');
-                const script1 = document.createElement('script');
-                script1.src = 'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js';
-                document.head.appendChild(script1);
-            }
-            
-            if (typeof window.jsPDF === 'undefined') {
-                console.warn('jsPDF未加载，尝试备用CDN...');
-                const script2 = document.createElement('script');
-                script2.src = 'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js';
-                document.head.appendChild(script2);
-            }
+            setTimeout(() => {
+                // 检查html2canvas
+                if (typeof html2canvas === 'undefined') {
+                    console.warn('html2canvas未加载，尝试备用CDN...');
+                    const script1 = document.createElement('script');
+                    script1.src = 'https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js';
+                    document.head.appendChild(script1);
+                } else {
+                    console.log('✅ html2canvas已正确加载');
+                }
+                
+                // 检查jsPDF
+                if (typeof window.jspdf === 'undefined') {
+                    console.warn('jsPDF未加载，尝试备用CDN...');
+                    const script2 = document.createElement('script');
+                    script2.src = 'https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js';
+                    script2.onload = function() {
+                        console.log('✅ 备用jsPDF已加载');
+                        testJsPDF();
+                    };
+                    document.head.appendChild(script2);
+                } else {
+                    console.log('✅ jsPDF已正确加载');
+                    testJsPDF();
+                }
+            }, 1000);
         });
+
+        // 测试jsPDF是否能正常工作
+        function testJsPDF() {
+            try {
+                if (window.jspdf && window.jspdf.jsPDF) {
+                    const { jsPDF } = window.jspdf;
+                    const testPdf = new jsPDF();
+                    console.log('✅ jsPDF功能测试通过');
+                } else {
+                    console.error('❌ jsPDF对象结构不正确');
+                }
+            } catch (error) {
+                console.error('❌ jsPDF测试失败:', error.message);
+            }
+        }
     </script>
     
     <!-- JavaScript文件 -->
