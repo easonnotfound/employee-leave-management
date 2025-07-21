@@ -188,11 +188,17 @@ class LeaveManagementApp {
         // 发送欢迎消息
         const welcomeMessage = `您好 ${summary.basic.name}！我是您的AI请假助手。
 
-我可以帮您申请以下类型的假期：
+我将帮您收集信息并生成包含以下字段的标准请假表格：
+📋 **标准表格字段**
+• 员工姓名、工号
+• 请假类型、请假日期、请假时长  
+• 剩余年假时长、申请时间
+
+🎯 **可申请的假期类型**
 • 年假（您当前剩余 ${summary.leave.remainingAnnualLeave} 天）
 • 病假、事假、婚假、产假、陪产假、丧假、调休假
 
-请告诉我您要申请哪种假期，以及大概的时间安排。`;
+请告诉我您要申请哪种假期？我会逐步收集信息为您生成标准表格。`;
 
         this.addMessage('ai', welcomeMessage);
 
@@ -209,11 +215,24 @@ class LeaveManagementApp {
 - 已用病假：${summary.leave.usedSickLeave}天
 - 已用事假：${summary.leave.usedPersonalLeave}天
 
-你的任务是：
-1. 理解员工的请假需求（类型、时间、原因）
-2. 根据公司制度提供专业建议
-3. 收集完整信息后生成请假申请
-4. 保持友好、专业的对话风格
+你的任务是系统地收集以下信息来生成标准请假表格：
+【必需信息】
+1. 请假类型（年假/病假/事假/婚假/产假/陪产假/丧假/调休假）
+2. 请假开始日期（YYYY-MM-DD格式）
+3. 请假结束日期（YYYY-MM-DD格式）
+4. 请假原因（简要说明）
+
+【工作流程】
+1. 首先询问员工要申请什么类型的假期
+2. 然后询问具体的请假时间（开始和结束日期）
+3. 询问请假原因
+4. 确认所有信息无误后，说"我现在为您生成请假申请表"
+
+【注意事项】
+- 逐步收集信息，不要一次询问所有内容
+- 根据公司制度提供专业建议
+- 保持友好、专业的对话风格
+- 当收集完整信息后，明确说出生成表格的指令
 
 请始终使用中文回复，语言简洁明了。`
             }
@@ -298,59 +317,121 @@ class LeaveManagementApp {
      * 处理AI响应，检查是否需要生成请假单
      */
     async processAIResponse(aiResponse, userMessage) {
-        // 简单的关键词检测，实际可以用更复杂的NLP
-        const generateKeywords = ['生成请假单', '提交申请', '确认申请', '完成申请', '申请表'];
+        // 检测AI是否要生成请假表格的关键词
+        const generateKeywords = [
+            '生成请假申请表',
+            '现在为您生成请假申请表', 
+            '生成请假单',
+            '提交申请',
+            '确认申请',
+            '完成申请',
+            '申请表',
+            '生成表格',
+            '为您生成',
+            '创建请假单'
+        ];
+        
         const shouldGenerate = generateKeywords.some(keyword => 
             aiResponse.includes(keyword) || userMessage.includes(keyword)
         );
 
-        if (shouldGenerate) {
+        // 同时检查对话是否包含了基本的请假信息
+        const hasBasicInfo = this.checkBasicLeaveInfo();
+
+        if (shouldGenerate || hasBasicInfo) {
             // 尝试从对话中提取请假信息
             await this.tryGenerateLeaveForm();
         }
     }
 
     /**
+     * 检查对话中是否包含基本的请假信息
+     */
+    checkBasicLeaveInfo() {
+        const conversationText = this.chatHistory
+            .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+            .map(msg => msg.content)
+            .join(' ');
+
+        // 检查是否包含请假类型
+        const leaveTypes = ['年假', '病假', '事假', '婚假', '产假', '陪产假', '丧假', '调休假'];
+        const hasLeaveType = leaveTypes.some(type => conversationText.includes(type));
+
+        // 检查是否包含日期信息
+        const datePattern = /(\d{4}[-年]\d{1,2}[-月]\d{1,2}[日]?)|([一二三四五六七八九十]{1,2}月[一二三四五六七八九十]{1,2}日)|(明天|后天|下周|下个月)/;
+        const hasDate = datePattern.test(conversationText);
+
+        // 检查是否包含天数信息
+        const daysPattern = /(\d+)\s*[天日]/;
+        const hasDays = daysPattern.test(conversationText);
+
+        return hasLeaveType && (hasDate || hasDays);
+    }
+
+    /**
      * 尝试生成请假单
      */
     async tryGenerateLeaveForm() {
-        // 这里可以添加更智能的信息提取逻辑
-        // 目前提供一个简化的演示流程
+        // 智能信息提取，提供更详细的提示来获得准确的JSON
         
-        const extractPrompt = `请从以下对话中提取请假信息，以JSON格式返回：
-{
-    "leaveType": "请假类型",
-    "startDate": "开始日期(YYYY-MM-DD)",
-    "endDate": "结束日期(YYYY-MM-DD)", 
-    "reason": "请假原因",
-    "days": "请假天数"
-}
+        const extractPrompt = `请仔细分析以下对话，提取员工的请假信息。
 
 对话内容：
 ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
 
-如果信息不完整，请返回 null。`;
+请严格按照以下JSON格式返回信息，如果某项信息不明确，请推断或使用合理默认值：
+
+{
+    "leaveType": "请假类型（年假/病假/事假/婚假/产假/陪产假/丧假/调休假）",
+    "startDate": "开始日期(YYYY-MM-DD格式，如2024-01-15)",
+    "endDate": "结束日期(YYYY-MM-DD格式，如2024-01-17)", 
+    "reason": "请假原因（如果没有明确说明，写'个人事务'）",
+    "days": 请假天数（数字，不要引号）
+}
+
+注意：
+1. 如果员工说"明天"，请转换为具体日期
+2. 如果员工说"3天"但没说具体日期，请从明天开始计算
+3. 如果信息完全不完整，才返回 null
+4. 只返回JSON，不要任何其他文字`;
 
         try {
             const extractResponse = await this.callAIAPI([
-                { role: 'system', content: '你是一个信息提取助手，只返回JSON格式的数据或null。' },
+                { role: 'system', content: '你是一个信息提取助手，专门从对话中提取请假信息并格式化为JSON。只返回JSON格式的数据或null，不要任何解释文字。' },
                 { role: 'user', content: extractPrompt }
             ]);
 
             // 尝试解析提取的信息
             let leaveInfo;
             try {
-                leaveInfo = JSON.parse(extractResponse);
+                // 清理可能的额外文字，只保留JSON部分
+                const jsonMatch = extractResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    leaveInfo = JSON.parse(jsonMatch[0]);
+                } else {
+                    leaveInfo = JSON.parse(extractResponse);
+                }
             } catch (e) {
-                // 如果解析失败，说明信息可能不完整
+                console.error('JSON解析失败:', e);
+                // 如果解析失败，提示用户信息不完整
+                this.addMessage('ai', '抱歉，我还需要更多信息来生成请假表格。请告诉我：\n1. 请假类型（年假/病假/事假等）\n2. 具体的开始和结束日期\n3. 请假原因');
                 return;
             }
 
             if (leaveInfo && leaveInfo.leaveType && leaveInfo.startDate && leaveInfo.endDate) {
                 await this.generateLeaveForm(leaveInfo);
+            } else {
+                // 信息不完整，继续对话
+                const missingInfo = [];
+                if (!leaveInfo?.leaveType) missingInfo.push('请假类型');
+                if (!leaveInfo?.startDate) missingInfo.push('开始日期');
+                if (!leaveInfo?.endDate) missingInfo.push('结束日期');
+                
+                this.addMessage('ai', `请提供以下信息来完成请假申请：${missingInfo.join('、')}`);
             }
         } catch (error) {
             console.error('Extract leave info error:', error);
+            this.addMessage('ai', '处理信息时遇到问题，请重新描述您的请假需求，包括请假类型、日期和原因。');
         }
     }
 
@@ -413,17 +494,44 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                 </div>
                 
                 <div class="form-content">
+                    <!-- 标准表格信息 - 突出显示核心字段 -->
+                    <div class="standard-table-section">
+                        <h3>📋 标准请假信息表</h3>
+                        <table class="standard-leave-table">
+                            <tbody>
+                                <tr>
+                                    <td class="field-label">员工姓名</td>
+                                    <td class="field-value">${employeeSummary.basic.name}</td>
+                                    <td class="field-label">工号</td>
+                                    <td class="field-value">${employeeSummary.basic.id}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假类型</td>
+                                    <td class="field-value leave-type">${summary.leaveType}</td>
+                                    <td class="field-label">请假时长</td>
+                                    <td class="field-value leave-days">${summary.days} 天</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假日期</td>
+                                    <td class="field-value" colspan="3">${summary.startDate} 至 ${summary.endDate}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">剩余年假时长</td>
+                                    <td class="field-value balance-highlight">${employeeSummary.leave.remainingAnnualLeave} 天</td>
+                                    <td class="field-label">申请时间</td>
+                                    <td class="field-value">${summary.applicationTime}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假原因</td>
+                                    <td class="field-value" colspan="3">${summary.reason || '个人事务'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
                     <div class="info-section">
-                        <h3>员工信息</h3>
+                        <h3>详细员工信息</h3>
                         <div class="info-grid">
-                            <div class="info-item">
-                                <label>姓名：</label>
-                                <span>${employeeSummary.basic.name}</span>
-                            </div>
-                            <div class="info-item">
-                                <label>工号：</label>
-                                <span>${employeeSummary.basic.id}</span>
-                            </div>
                             <div class="info-item">
                                 <label>部门：</label>
                                 <span>${employeeSummary.basic.department}</span>
@@ -431,6 +539,14 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                             <div class="info-item">
                                 <label>职位：</label>
                                 <span>${employeeSummary.basic.position}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>直属主管：</label>
+                                <span>${employeeSummary.basic.supervisor}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>工作制度：</label>
+                                <span>${employeeSummary.basic.workType}</span>
                             </div>
                         </div>
                     </div>

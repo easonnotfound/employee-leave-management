@@ -645,6 +645,75 @@ body {
     line-height: 1.6;
 }
 
+/* 标准表格样式 */
+.standard-table-section {
+    margin-bottom: var(--space-8);
+    padding: var(--space-6);
+    background: linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(90, 200, 250, 0.05));
+    border-radius: var(--radius-md);
+    border: 2px solid var(--primary-blue);
+}
+
+.standard-table-section h3 {
+    font-size: var(--font-size-xl);
+    color: var(--primary-blue);
+    margin-bottom: var(--space-6);
+    font-weight: 700;
+    text-align: center;
+}
+
+.standard-leave-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-base);
+    background: white;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+}
+
+.standard-leave-table td {
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--gray-200);
+    vertical-align: middle;
+}
+
+.field-label {
+    background: var(--gray-50);
+    font-weight: 600;
+    color: var(--gray-700);
+    width: 25%;
+    text-align: center;
+}
+
+.field-value {
+    color: var(--gray-800);
+    font-weight: 500;
+    width: 25%;
+    text-align: center;
+}
+
+.field-value.leave-type {
+    background: var(--primary-blue);
+    color: white;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+}
+
+.field-value.leave-days {
+    background: var(--success-green);
+    color: white;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+}
+
+.field-value.balance-highlight {
+    background: var(--warning-orange);
+    color: white;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+}
+
 .form-header {
     text-align: center;
     margin-bottom: var(--space-8);
