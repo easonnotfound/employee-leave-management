@@ -299,8 +299,8 @@ class LeaveManagementApp {
         this.showLoading('验证身份中...');
 
         try {
-            // 验证员工身份
-            const authResult = window.employeeManager.authenticateEmployee(identifier);
+            // 验证员工身份 - 调用API
+            const authResult = await window.employeeManager.authenticateEmployee(identifier);
             
             if (authResult.success) {
                 this.currentEmployee = authResult.employee;
@@ -312,6 +312,13 @@ class LeaveManagementApp {
                 }, 1500);
             } else {
                 this.showAuthStatus(authResult.message, 'error');
+                
+                // 如果有建议，显示建议
+                if (authResult.suggestion) {
+                    setTimeout(() => {
+                        this.showAuthStatus(authResult.suggestion, 'warning');
+                    }, 3000);
+                }
             }
         } catch (error) {
             console.error('Authentication error:', error);
@@ -1515,26 +1522,110 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
     }
 
     /**
-     * 保存请假记录
+     * 保存请假记录到数据库
      */
-    saveLeaveRecord(summary) {
-        const record = {
-            id: this.generateApplicationId(),
-            employeeName: summary.employee.name,
-            employeeId: summary.employee.id,
-            department: summary.employee.department,
-            leaveType: summary.leaveType,
-            startDate: summary.startDate,
-            endDate: summary.endDate,
-            days: summary.days,
-            reason: summary.reason,
-            status: 'pending',
-            applicationTime: summary.applicationTime,
-            approvalProcess: summary.approvalProcess
-        };
+    async saveLeaveRecord(summary) {
+        try {
+            // 准备提交到后端的数据
+            const leaveData = {
+                employeeId: summary.employee.id,
+                leaveType: summary.leaveType,
+                startDate: summary.startDate,
+                endDate: summary.endDate,
+                days: summary.days,
+                reason: summary.reason,
+                advanceNoticeDays: summary.advanceNoticeDays || 0,
+                applicationTime: summary.applicationTime,
+                approvalProcess: summary.approvalProcess
+            };
 
-        this.leaveRecords.push(record);
-        this.saveLeaveRecords();
+            console.log('💾 保存请假记录到数据库:', leaveData);
+
+            // 调用后端API提交请假申请
+            const response = await window.employeeManager.submitLeaveApplication(leaveData);
+            
+            if (response.success) {
+                this.showToast(`✅ 请假申请已保存到数据库 (申请编号: ${response.applicationId})`, 'success');
+                
+                // 添加到本地记录用于立即显示
+                const localRecord = {
+                    id: response.applicationId,
+                    employeeName: summary.employee.name,
+                    employeeId: summary.employee.id,
+                    department: summary.employee.department || summary.employee.basic?.department,
+                    leaveType: summary.leaveType,
+                    startDate: summary.startDate,
+                    endDate: summary.endDate,
+                    days: summary.days,
+                    reason: summary.reason,
+                    status: 'pending',
+                    applicationTime: summary.applicationTime,
+                    approvalProcess: summary.approvalProcess
+                };
+                
+                this.leaveRecords.unshift(localRecord);
+                
+                // 同时更新localStorage作为备份
+                this.saveLeaveRecords();
+                
+                // 刷新管理员数据（如果在管理员界面）
+                if (this.currentView === 'admin') {
+                    await this.loadAdminData();
+                }
+                
+                return response;
+            } else {
+                this.showToast(`❌ 保存失败: ${response.message}`, 'error');
+                
+                // 如果后端保存失败，仍然保存到本地作为备份
+                const backupRecord = {
+                    id: this.generateApplicationId(),
+                    employeeName: summary.employee.name,
+                    employeeId: summary.employee.id,
+                    department: summary.employee.department || summary.employee.basic?.department,
+                    leaveType: summary.leaveType,
+                    startDate: summary.startDate,
+                    endDate: summary.endDate,
+                    days: summary.days,
+                    reason: summary.reason,
+                    status: 'pending',
+                    applicationTime: summary.applicationTime,
+                    approvalProcess: summary.approvalProcess,
+                    _backup: true // 标记为备份记录
+                };
+                
+                this.leaveRecords.unshift(backupRecord);
+                this.saveLeaveRecords();
+                
+                this.showToast('📝 已保存到本地备份，请稍后重试同步到数据库', 'warning');
+                return null;
+            }
+        } catch (error) {
+            console.error('保存请假记录失败:', error);
+            this.showToast(`❌ 保存失败: ${error.message}`, 'error');
+            
+            // 保存到本地作为备份
+            const backupRecord = {
+                id: this.generateApplicationId(),
+                employeeName: summary.employee.name,
+                employeeId: summary.employee.id,
+                department: summary.employee.department || summary.employee.basic?.department,
+                leaveType: summary.leaveType,
+                startDate: summary.startDate,
+                endDate: summary.endDate,
+                days: summary.days,
+                reason: summary.reason,
+                status: 'pending',
+                applicationTime: summary.applicationTime,
+                approvalProcess: summary.approvalProcess,
+                _backup: true
+            };
+            
+            this.leaveRecords.unshift(backupRecord);
+            this.saveLeaveRecords();
+            
+            return null;
+        }
     }
 
     /**
@@ -1555,33 +1646,140 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
     /**
      * 加载管理员数据
      */
-    loadAdminData() {
-        this.updateAdminStats();
-        this.loadLeaveRecordsTable();
+    async loadAdminData() {
+        await this.updateAdminStats();
+        await this.loadLeaveRecordsTable();
     }
 
     /**
-     * 更新管理员统计数据
+     * 更新管理员统计数据 - 从API获取
      */
-    updateAdminStats() {
-        const totalEmployees = window.employeeManager.getAllEmployees().length;
-        const todayLeaves = this.leaveRecords.filter(record => {
-            const today = new Date().toISOString().split('T')[0];
-            return record.startDate <= today && record.endDate >= today;
-        }).length;
-        const pendingApprovals = this.leaveRecords.filter(record => 
-            record.status === 'pending'
-        ).length;
+    async updateAdminStats() {
+        try {
+            console.log('📊 更新管理员统计数据...');
+            
+            // 从API获取统计数据
+            const stats = await window.employeeManager.getAdminStats();
+            
+            if (stats) {
+                document.getElementById('totalEmployees').textContent = stats.totalEmployees;
+                document.getElementById('totalLeaves').textContent = stats.todayLeaves;
+                document.getElementById('pendingApprovals').textContent = stats.pendingApprovals;
+                
+                console.log('✅ 统计数据更新成功:', stats);
+            } else {
+                // 如果API失败，使用本地数据作为备份
+                console.warn('⚠️ API获取统计数据失败，使用本地数据');
+                
+                const employees = await window.employeeManager.getAllEmployees();
+                const totalEmployees = employees.length;
+                
+                const today = new Date().toISOString().split('T')[0];
+                const todayLeaves = this.leaveRecords.filter(record => {
+                    return record.startDate <= today && record.endDate >= today && record.status === 'approved';
+                }).length;
+                
+                const pendingApprovals = this.leaveRecords.filter(record => 
+                    record.status === 'pending'
+                ).length;
 
-        document.getElementById('totalEmployees').textContent = totalEmployees;
-        document.getElementById('totalLeaves').textContent = todayLeaves;
-        document.getElementById('pendingApprovals').textContent = pendingApprovals;
+                document.getElementById('totalEmployees').textContent = totalEmployees;
+                document.getElementById('totalLeaves').textContent = todayLeaves;
+                document.getElementById('pendingApprovals').textContent = pendingApprovals;
+            }
+        } catch (error) {
+            console.error('❌ 更新统计数据失败:', error);
+            
+            // 显示错误状态
+            document.getElementById('totalEmployees').textContent = '?';
+            document.getElementById('totalLeaves').textContent = '?';
+            document.getElementById('pendingApprovals').textContent = '?';
+            
+            this.showToast('获取统计数据失败，请检查后端连接', 'error');
+        }
     }
 
     /**
-     * 加载请假记录表格
+     * 加载请假记录表格 - 从API获取
      */
-    loadLeaveRecordsTable() {
+    async loadLeaveRecordsTable() {
+        const tbody = document.querySelector('#recordsTable tbody');
+        
+        try {
+            console.log('📋 加载请假记录表格...');
+            
+            // 从API获取请假记录
+            const response = await window.employeeManager.getLeaveRecords();
+            
+            if (response.success && response.records) {
+                const records = response.records;
+                
+                if (records.length === 0) {
+                    tbody.innerHTML = '<tr class="no-data"><td colspan="7">暂无请假记录</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = records.map(record => `
+                    <tr>
+                        <td>${this.formatDateTime(record.application_time)}</td>
+                        <td>${record.employee_name}</td>
+                        <td>${record.department_name}</td>
+                        <td>${record.leave_type}</td>
+                        <td>${record.days}天</td>
+                        <td>
+                            <span class="status-badge status-${record.status}">
+                                ${this.getStatusText(record.status)}
+                            </span>
+                            ${record._backup ? '<small class="text-warning">(本地)</small>' : ''}
+                        </td>
+                        <td>
+                            <button class="btn-sm" onclick="app.viewRecord('${record.id}')">查看</button>
+                            ${record.status === 'pending' ? `
+                                <button class="btn-sm" onclick="app.approveRecord('${record.id}', 'approve')" title="批准">
+                                    ✓
+                                </button>
+                                <button class="btn-sm" onclick="app.approveRecord('${record.id}', 'reject')" title="拒绝">
+                                    ✗
+                                </button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+
+                // 更新本地记录缓存
+                this.leaveRecords = records.map(record => ({
+                    id: record.id,
+                    employeeName: record.employee_name,
+                    employeeId: record.employee_id,
+                    department: record.department_name,
+                    leaveType: record.leave_type,
+                    startDate: record.start_date,
+                    endDate: record.end_date,
+                    days: record.days,
+                    reason: record.reason,
+                    status: record.status,
+                    applicationTime: record.application_time
+                }));
+
+                console.log(`✅ 加载了 ${records.length} 条请假记录`);
+            } else {
+                // API失败，使用本地数据
+                console.warn('⚠️ API获取请假记录失败，使用本地数据');
+                this.loadLocalLeaveRecords();
+            }
+        } catch (error) {
+            console.error('❌ 加载请假记录失败:', error);
+            
+            // 显示错误并使用本地数据
+            this.showToast('获取请假记录失败，显示本地数据', 'warning');
+            this.loadLocalLeaveRecords();
+        }
+    }
+
+    /**
+     * 加载本地请假记录作为备份
+     */
+    loadLocalLeaveRecords() {
         const tbody = document.querySelector('#recordsTable tbody');
         
         if (this.leaveRecords.length === 0) {
@@ -1591,7 +1789,7 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
 
         tbody.innerHTML = this.leaveRecords.map(record => `
             <tr>
-                <td>${record.applicationTime}</td>
+                <td>${this.formatDateTime(record.applicationTime)}</td>
                 <td>${record.employeeName}</td>
                 <td>${record.department}</td>
                 <td>${record.leaveType}</td>
@@ -1600,12 +1798,31 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                     <span class="status-badge status-${record.status}">
                         ${this.getStatusText(record.status)}
                     </span>
+                    ${record._backup ? '<small class="text-warning">(本地)</small>' : ''}
                 </td>
                 <td>
                     <button class="btn-sm" onclick="app.viewRecord('${record.id}')">查看</button>
                 </td>
             </tr>
         `).join('');
+    }
+
+    /**
+     * 格式化日期时间显示
+     */
+    formatDateTime(dateTime) {
+        try {
+            const date = new Date(dateTime);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            return dateTime;
+        }
     }
 
     /**
@@ -1722,6 +1939,1071 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
         setTimeout(() => {
             toast.remove();
         }, 3000);
+    }
+
+    /**
+     * 开始AI对话
+     */
+    async startChat() {
+        // 隐藏验证区域，显示新的分栏对话界面（实时对话+表格界面）
+        this.hideSection('authSection');
+        this.showSection('chatTableSection');
+
+        // 更新聊天头部信息
+        const summary = window.employeeManager.getEmployeeSummary(this.currentEmployee);
+        document.getElementById('chatUserNameInline').textContent = summary.basic.name;
+        document.getElementById('chatUserDeptInline').textContent = `${summary.basic.department} · ${summary.basic.position}`;
+
+        // 启用聊天输入
+        document.getElementById('chatInputInline').disabled = false;
+        document.getElementById('sendBtnInline').disabled = false;
+        document.getElementById('chatStatusInline').textContent = '请告诉我您要申请什么类型的假期';
+
+        // 初始化实时表格区域
+        this.initializeRealtimeTable();
+
+        // 发送欢迎消息
+        const welcomeMessage = `您好 ${summary.basic.name}！我是您的AI请假助手。
+
+我将帮您收集信息并在右侧实时生成请假表格：
+📋 **实时表格功能**
+• 根据对话内容自动更新表格字段
+• 实时显示请假信息和审批流程
+• 支持在线编辑和下载
+
+🎯 **可申请的假期类型**
+• 年假（您当前剩余 ${summary.leave.remainingAnnualLeave} 天）
+• 病假、事假、婚假、产假、陪产假、丧假、调休假
+
+请告诉我您要申请哪种假期？我会边聊边在右侧更新表格内容。`;
+
+        this.addMessageInline('ai', welcomeMessage);
+
+        // 获取当前日期用于AI提示
+        const todayDate = TimeUtils.formatDate(TimeUtils.getCurrentTime());
+        
+        // 初始化对话状态
+        this.chatHistory = [
+            {
+                role: 'system',
+                content: `你是一个专业的员工请假管理AI助手。当前员工信息：
+- 姓名：${summary.basic.name}
+- 工号：${summary.basic.id}
+- 部门：${summary.basic.department}
+- 职位：${summary.basic.position}
+- 剩余年假：${summary.leave.remainingAnnualLeave}天
+- 已用病假：${summary.leave.usedSickLeave}天
+- 已用事假：${summary.leave.usedPersonalLeave}天
+
+今天的日期是：${todayDate}
+
+你的任务是逐步收集请假信息，并在用户提供信息时触发实时表格更新：
+
+【收集顺序】
+1. 请假类型（年假/病假/事假/婚假/产假/陪产假/丧假/调休假）
+2. 请假开始日期（YYYY-MM-DD格式）
+3. 请假结束日期（YYYY-MM-DD格式）
+4. 请假原因
+
+【实时更新指令】
+当收集到部分信息时，请在回复中包含特殊标记来触发表格更新：
+- [UPDATE_TABLE:部分信息] - 用于部分信息更新
+- [GENERATE_TABLE:完整信息] - 用于生成完整表格
+
+例如：用户说"我要请年假"，你回复时加上：[UPDATE_TABLE:{"leaveType":"年假"}]
+用户说"2025-01-20到2025-01-22"，你回复时加上：[UPDATE_TABLE:{"startDate":"2025-01-20","endDate":"2025-01-22"}]
+
+【注意事项】
+- 逐步收集，每次只询问1-2个信息
+- 根据用户回答实时更新右侧表格
+- 保持友好、专业的对话风格
+- 收集完整信息后自动生成完整表格
+
+请始终使用中文回复。`
+            }
+        ];
+
+        // 绑定新的聊天事件
+        this.bindInlineChatEvents();
+    }
+
+    /**
+     * 初始化实时表格区域
+     */
+    initializeRealtimeTable() {
+        // 显示占位符
+        this.showTablePlaceholder();
+        
+        // 初始化空的请假信息对象
+        this.realtimeLeaveInfo = {
+            employee: this.currentEmployee,
+            leaveType: null,
+            startDate: null,
+            endDate: null,
+            days: null,
+            reason: null,
+            applicationTime: TimeUtils.formatDateTime(TimeUtils.getCurrentTime()),
+            applicationDate: TimeUtils.formatDate(TimeUtils.getCurrentTime())
+        };
+    }
+
+    /**
+     * 显示表格占位符
+     */
+    showTablePlaceholder() {
+        const tableContent = document.getElementById('realtimeTableContent');
+        tableContent.innerHTML = `
+            <div class="table-placeholder">
+                <div class="placeholder-content">
+                    <i class="fas fa-comments"></i>
+                    <h4>开始对话生成表格</h4>
+                    <p>请在左侧与AI助手对话，我会根据您的需求实时生成请假申请表</p>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * 绑定分栏模式的聊天事件
+     */
+    bindInlineChatEvents() {
+        // 发送消息事件
+        document.getElementById('sendBtnInline').addEventListener('click', () => {
+            this.sendMessageInline();
+        });
+
+        document.getElementById('chatInputInline').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessageInline();
+            }
+        });
+
+        // 重置聊天事件
+        document.getElementById('chatResetBtnInline').addEventListener('click', () => {
+            this.resetChatInline();
+        });
+
+        // 表格操作事件
+        document.getElementById('editBtnInline')?.addEventListener('click', () => {
+            this.toggleEditModeInline();
+        });
+
+        document.getElementById('saveBtnInline')?.addEventListener('click', () => {
+            this.saveEditedFormInline();
+        });
+
+        document.getElementById('downloadImageBtnInline')?.addEventListener('click', () => {
+            this.downloadAsImageInline();
+        });
+
+        document.getElementById('downloadPdfBtnInline')?.addEventListener('click', () => {
+            this.downloadAsPdfInline();
+        });
+    }
+
+    /**
+     * 发送消息（分栏模式）
+     */
+    async sendMessageInline() {
+        const input = document.getElementById('chatInputInline');
+        const message = input.value.trim();
+
+        if (!message) return;
+
+        // 显示用户消息
+        this.addMessageInline('user', message);
+        input.value = '';
+
+        // 显示AI思考状态
+        document.getElementById('chatStatusInline').textContent = 'AI正在回复...';
+        document.getElementById('sendBtnInline').disabled = true;
+
+        // 创建AI消息占位符
+        const aiMessageId = this.addMessageInline('ai', '正在思考...');
+
+        try {
+            // 添加用户消息到对话历史
+            this.chatHistory.push({ role: 'user', content: message });
+
+            // 调用AI API（流式传输）
+            const response = await this.callAIAPI(this.chatHistory, true);
+            
+            // 处理流式响应
+            const aiResponse = await this.handleStreamResponseInline(response, aiMessageId);
+            
+            // 添加AI回复到对话历史
+            this.chatHistory.push({ role: 'assistant', content: aiResponse });
+
+            // 检查是否需要更新表格
+            await this.processAIResponseForTable(aiResponse, message);
+
+        } catch (error) {
+            console.error('AI Chat error:', error);
+            this.updateStreamingMessageInline(aiMessageId, '抱歉，我遇到了一些技术问题。请稍后重试。');
+        } finally {
+            document.getElementById('chatStatusInline').textContent = '请输入您的消息...';
+            document.getElementById('sendBtnInline').disabled = false;
+        }
+    }
+
+    /**
+     * 处理流式响应（分栏模式）
+     */
+    async handleStreamResponseInline(response, messageId) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        
+                        if (data === '[DONE]') {
+                            return fullContent;
+                        }
+
+                        try {
+                            const json = JSON.parse(data);
+                            if (json.choices && json.choices[0] && json.choices[0].delta) {
+                                const content = json.choices[0].delta.content;
+                                if (content) {
+                                    fullContent += content;
+                                    
+                                    // 实时更新消息内容
+                                    this.updateStreamingMessageInline(messageId, fullContent);
+                                }
+                            }
+                        } catch (e) {
+                            // 忽略JSON解析错误
+                        }
+                    }
+                }
+            }
+
+            return fullContent;
+        } catch (error) {
+            console.error('Stream processing error:', error);
+            throw error;
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
+     * 更新流式消息内容（分栏模式）
+     */
+    updateStreamingMessageInline(messageId, content) {
+        const messageElement = document.getElementById(messageId);
+        if (messageElement) {
+            const bubbleElement = messageElement.querySelector('.message-bubble');
+            if (bubbleElement) {
+                // 处理UPDATE_TABLE标记，但不在显示中包含
+                const displayContent = content.replace(/\[UPDATE_TABLE:.*?\]/g, '').replace(/\[GENERATE_TABLE:.*?\]/g, '');
+                bubbleElement.innerHTML = displayContent.replace(/\n/g, '<br>');
+                
+                // 滚动到底部
+                const messagesContainer = document.getElementById('chatMessagesInline');
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
+    }
+
+    /**
+     * 处理AI响应以更新表格
+     */
+    async processAIResponseForTable(aiResponse, userMessage) {
+        // 检查AI响应中是否包含表格更新指令
+        const updateMatch = aiResponse.match(/\[UPDATE_TABLE:(.*?)\]/);
+        const generateMatch = aiResponse.match(/\[GENERATE_TABLE:(.*?)\]/);
+
+        if (updateMatch) {
+            try {
+                const updateData = JSON.parse(updateMatch[1]);
+                await this.updateRealtimeTable(updateData);
+            } catch (error) {
+                console.error('Parse update data error:', error);
+            }
+        }
+
+        if (generateMatch) {
+            try {
+                const completeData = JSON.parse(generateMatch[1]);
+                await this.generateRealtimeTable(completeData);
+            } catch (error) {
+                console.error('Parse generate data error:', error);
+            }
+        }
+
+        // 如果没有明确的指令，尝试智能提取信息
+        if (!updateMatch && !generateMatch) {
+            await this.smartExtractAndUpdate(aiResponse, userMessage);
+        }
+    }
+
+    /**
+     * 智能提取并更新表格信息
+     */
+    async smartExtractAndUpdate(aiResponse, userMessage) {
+        // 使用增强的智能提取方法
+        const updateData = await this.enhancedSmartExtract(aiResponse, userMessage);
+        
+        // 如果有更新数据，则更新表格
+        if (Object.keys(updateData).length > 0) {
+            console.log('智能提取到的信息:', updateData);
+            await this.updateRealtimeTable(updateData);
+        }
+    }
+
+    /**
+     * 更新实时表格
+     */
+    async updateRealtimeTable(updateData) {
+        // 更新实时请假信息
+        Object.assign(this.realtimeLeaveInfo, updateData);
+        
+        console.log('更新实时表格数据:', updateData);
+        console.log('当前实时请假信息:', this.realtimeLeaveInfo);
+        
+        // 如果表格还没生成，先生成基础表格
+        const tableContent = document.getElementById('realtimeTableContent');
+        if (tableContent.querySelector('.table-placeholder')) {
+            this.generateBaseRealtimeTable();
+        }
+        
+        // 更新具体字段
+        this.updateTableFields(updateData);
+        
+        // 添加更新动画效果
+        this.highlightUpdatedFields(updateData);
+    }
+
+    /**
+     * 生成基础实时表格
+     */
+    generateBaseRealtimeTable() {
+        const tableContent = document.getElementById('realtimeTableContent');
+        const employee = this.currentEmployee;
+        const employeeSummary = window.employeeManager.getEmployeeSummary(employee);
+
+        const html = `
+            <div class="realtime-table">
+                <div class="leave-form">
+                    <div class="form-header">
+                        <h2>员工请假申请表</h2>
+                        <div class="form-id">申请编号：${this.generateApplicationId()}</div>
+                    </div>
+                    
+                    <div class="standard-table-section">
+                        <h3>📋 请假信息表（实时更新）</h3>
+                        <table class="standard-leave-table" id="realtimeStandardTable">
+                            <tbody>
+                                <tr>
+                                    <td class="field-label">员工姓名</td>
+                                    <td class="field-value" id="rt-employeeName">${employeeSummary.basic.name}</td>
+                                    <td class="field-label">工号</td>
+                                    <td class="field-value" id="rt-employeeId">${employeeSummary.basic.id}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假类型</td>
+                                    <td class="field-value" id="rt-leaveType">
+                                        <span class="placeholder-text">请选择假期类型</span>
+                                    </td>
+                                    <td class="field-label">请假时长</td>
+                                    <td class="field-value" id="rt-leaveDays">
+                                        <span class="placeholder-text">待确定</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假日期</td>
+                                    <td class="field-value" colspan="3" id="rt-leaveDates">
+                                        <span class="placeholder-text">请提供请假日期</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">剩余年假时长</td>
+                                    <td class="field-value balance-highlight">${employeeSummary.leave.remainingAnnualLeave} 天</td>
+                                    <td class="field-label">申请时间</td>
+                                    <td class="field-value" id="rt-applicationTime">${TimeUtils.formatDateTime(TimeUtils.getCurrentTime())}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假原因</td>
+                                    <td class="field-value" colspan="3" id="rt-reason">
+                                        <span class="placeholder-text">待填写</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        tableContent.innerHTML = html;
+    }
+
+    /**
+     * 更新表格字段
+     */
+    updateTableFields(updateData) {
+        if (updateData.leaveType) {
+            const leaveTypeCell = document.getElementById('rt-leaveType');
+            if (leaveTypeCell) {
+                leaveTypeCell.innerHTML = `<span class="leave-type">${updateData.leaveType}</span>`;
+                leaveTypeCell.classList.add('realtime-update');
+                this.addUpdateIndicator(leaveTypeCell);
+            }
+        }
+
+        if (updateData.startDate || updateData.endDate) {
+            const datesCell = document.getElementById('rt-leaveDates');
+            if (datesCell) {
+                const startDate = updateData.startDate || this.realtimeLeaveInfo.startDate || '开始日期';
+                const endDate = updateData.endDate || this.realtimeLeaveInfo.endDate || '结束日期';
+                datesCell.innerHTML = `${startDate} 至 ${endDate}`;
+                datesCell.classList.add('realtime-update');
+                this.addUpdateIndicator(datesCell);
+                
+                // 如果有完整日期，计算天数
+                if (this.realtimeLeaveInfo.startDate && this.realtimeLeaveInfo.endDate) {
+                    const validation = TimeUtils.validateLeaveDate(this.realtimeLeaveInfo.startDate, this.realtimeLeaveInfo.endDate);
+                    if (validation.valid) {
+                        this.realtimeLeaveInfo.days = validation.days;
+                        const daysCell = document.getElementById('rt-leaveDays');
+                        if (daysCell) {
+                            daysCell.innerHTML = `<span class="leave-days">${validation.days} 天</span>`;
+                            daysCell.classList.add('realtime-update');
+                            this.addUpdateIndicator(daysCell);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (updateData.days) {
+            const daysCell = document.getElementById('rt-leaveDays');
+            if (daysCell) {
+                daysCell.innerHTML = `<span class="leave-days">${updateData.days} 天</span>`;
+                daysCell.classList.add('realtime-update');
+                this.addUpdateIndicator(daysCell);
+            }
+        }
+
+        if (updateData.reason) {
+            const reasonCell = document.getElementById('rt-reason');
+            if (reasonCell) {
+                reasonCell.textContent = updateData.reason;
+                reasonCell.classList.add('realtime-update');
+                this.addUpdateIndicator(reasonCell);
+            }
+        }
+
+        // 更新申请时间为当前时间
+        const timeCell = document.getElementById('rt-applicationTime');
+        if (timeCell) {
+            timeCell.textContent = TimeUtils.formatDateTime(TimeUtils.getCurrentTime());
+        }
+
+        // 显示更新提示
+        this.showToast('📝 表格已更新', 'success');
+    }
+
+    /**
+     * 高亮更新的字段
+     */
+    highlightUpdatedFields(updateData) {
+        // 移除之前的高亮效果
+        setTimeout(() => {
+            document.querySelectorAll('.realtime-update').forEach(el => {
+                el.classList.remove('realtime-update');
+            });
+        }, 600);
+    }
+
+    /**
+     * 添加聊天消息（分栏模式）
+     */
+    addMessageInline(sender, content, messageId = null) {
+        const messagesContainer = document.getElementById('chatMessagesInline');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${sender}`;
+        
+        // 如果是AI消息且没有提供ID，生成一个唯一ID用于流式更新
+        if (sender === 'ai' && !messageId) {
+            messageId = 'ai-message-inline-' + Date.now();
+        }
+        
+        if (messageId) {
+            messageDiv.id = messageId;
+        }
+
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'message-bubble';
+        bubbleDiv.innerHTML = content.replace(/\n/g, '<br>');
+
+        messageDiv.appendChild(bubbleDiv);
+        messagesContainer.appendChild(messageDiv);
+
+        // 滚动到底部
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        return messageId;
+    }
+
+    /**
+     * 重置聊天（分栏模式）
+     */
+    resetChatInline() {
+        // 清除分栏聊天记录
+        const messagesContainer = document.getElementById('chatMessagesInline');
+        if (messagesContainer) {
+            messagesContainer.innerHTML = '';
+        }
+        
+        this.chatHistory = [];
+        this.realtimeLeaveInfo = null;
+        
+        // 重置状态
+        this.currentEmployee = null;
+        this.leaveRequest = null;
+        
+        // 返回身份验证界面
+        this.hideSection('chatTableSection');
+        this.showSection('authSection');
+        
+        // 清空输入框
+        document.getElementById('employeeName').value = '';
+        document.getElementById('authStatus').style.display = 'none';
+    }
+
+    /**
+     * 编辑模式切换（分栏模式）
+     */
+    toggleEditModeInline() {
+        const table = document.getElementById('realtimeStandardTable');
+        const editBtn = document.getElementById('editBtnInline');
+        const saveBtn = document.getElementById('saveBtnInline');
+
+        if (!table) {
+            this.showToast('请先生成表格再进行编辑', 'warning');
+            return;
+        }
+
+        if (table.classList.contains('edit-mode')) {
+            // 退出编辑模式
+            this.exitEditModeInline();
+        } else {
+            // 进入编辑模式
+            table.classList.add('edit-mode');
+            editBtn.innerHTML = '<i class="fas fa-times"></i> 取消编辑';
+            saveBtn.classList.remove('hidden');
+            
+            // 将静态文本转换为可编辑字段
+            this.makeTableEditable();
+            this.showToast('编辑模式已开启', 'success');
+        }
+    }
+
+    /**
+     * 使表格可编辑
+     */
+    makeTableEditable() {
+        // 请假类型编辑
+        const leaveTypeCell = document.getElementById('rt-leaveType');
+        if (leaveTypeCell && !leaveTypeCell.querySelector('select')) {
+            const currentType = leaveTypeCell.textContent.trim();
+            leaveTypeCell.innerHTML = `
+                <select class="editable-field">
+                    <option value="年假" ${currentType === '年假' ? 'selected' : ''}>年假</option>
+                    <option value="病假" ${currentType === '病假' ? 'selected' : ''}>病假</option>
+                    <option value="事假" ${currentType === '事假' ? 'selected' : ''}>事假</option>
+                    <option value="婚假" ${currentType === '婚假' ? 'selected' : ''}>婚假</option>
+                    <option value="产假" ${currentType === '产假' ? 'selected' : ''}>产假</option>
+                    <option value="陪产假" ${currentType === '陪产假' ? 'selected' : ''}>陪产假</option>
+                    <option value="丧假" ${currentType === '丧假' ? 'selected' : ''}>丧假</option>
+                    <option value="调休假" ${currentType === '调休假' ? 'selected' : ''}>调休假</option>
+                </select>
+            `;
+        }
+
+        // 请假天数编辑
+        const daysCell = document.getElementById('rt-leaveDays');
+        if (daysCell && !daysCell.querySelector('input')) {
+            const currentDays = daysCell.textContent.match(/\d+/);
+            daysCell.innerHTML = `<input type="number" class="editable-field" value="${currentDays ? currentDays[0] : ''}" min="1" max="365"> 天`;
+        }
+
+        // 请假原因编辑
+        const reasonCell = document.getElementById('rt-reason');
+        if (reasonCell && !reasonCell.querySelector('textarea')) {
+            const currentReason = reasonCell.textContent.trim();
+            reasonCell.innerHTML = `<textarea class="editable-field" rows="2">${currentReason === '待填写' ? '' : currentReason}</textarea>`;
+        }
+    }
+
+    /**
+     * 退出编辑模式（分栏模式）
+     */
+    exitEditModeInline() {
+        const table = document.getElementById('realtimeStandardTable');
+        const editBtn = document.getElementById('editBtnInline');
+        const saveBtn = document.getElementById('saveBtnInline');
+
+        table.classList.remove('edit-mode');
+        editBtn.innerHTML = '<i class="fas fa-edit"></i> 编辑表格';
+        saveBtn.classList.add('hidden');
+    }
+
+    /**
+     * 保存编辑（分栏模式）
+     */
+    saveEditedFormInline() {
+        try {
+            // 收集编辑的数据
+            const editedData = {};
+
+            const leaveTypeSelect = document.querySelector('#rt-leaveType select');
+            if (leaveTypeSelect) {
+                editedData.leaveType = leaveTypeSelect.value;
+            }
+
+            const daysInput = document.querySelector('#rt-leaveDays input');
+            if (daysInput) {
+                editedData.days = parseInt(daysInput.value);
+            }
+
+            const reasonTextarea = document.querySelector('#rt-reason textarea');
+            if (reasonTextarea) {
+                editedData.reason = reasonTextarea.value;
+            }
+
+            // 更新实时请假信息
+            Object.assign(this.realtimeLeaveInfo, editedData);
+
+            // 重新生成表格显示
+            this.generateBaseRealtimeTable();
+            this.updateTableFields(editedData);
+
+            // 退出编辑模式
+            this.exitEditModeInline();
+
+            this.showToast('表格已保存！', 'success');
+
+        } catch (error) {
+            console.error('Save form error:', error);
+            this.showToast('保存失败，请重试', 'error');
+        }
+    }
+
+    /**
+     * 下载图片（分栏模式）
+     */
+    async downloadAsImageInline() {
+        try {
+            this.showLoading('正在生成图片...');
+            
+            if (typeof html2canvas === 'undefined') {
+                throw new Error('html2canvas库未正确加载，无法生成图片');
+            }
+            
+            const element = document.querySelector('#realtimeTableContent .realtime-table');
+            if (!element) {
+                throw new Error('请先生成表格再下载');
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+            });
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + '-' + 
+                           String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(today.getDate()).padStart(2, '0');
+            const employeeName = this.realtimeLeaveInfo?.employee?.name || '员工';
+            
+            const link = document.createElement('a');
+            link.download = `请假申请表_${employeeName}_${dateStr}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+
+            this.showToast('图片下载成功！', 'success');
+        } catch (error) {
+            console.error('Download image error:', error);
+            this.showToast(`图片下载失败：${error.message}`, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
+     * 下载PDF（分栏模式）
+     */
+    async downloadAsPdfInline() {
+        try {
+            this.showLoading('正在生成PDF...');
+
+            if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+                throw new Error('jsPDF库未正确加载，请刷新页面重试');
+            }
+
+            const element = document.querySelector('#realtimeTableContent .realtime-table');
+            if (!element) {
+                throw new Error('请先生成表格再下载');
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            
+            const margin = 10;
+            const availableWidth = pdfWidth - 2 * margin;
+            const availableHeight = pdfHeight - 2 * margin;
+            
+            const pixelToMm = 0.264583;
+            const imgWidthMm = (canvas.width / 2) * pixelToMm;
+            const imgHeightMm = (canvas.height / 2) * pixelToMm;
+            
+            const widthRatio = availableWidth / imgWidthMm;
+            const heightRatio = availableHeight / imgHeightMm;
+            const ratio = Math.min(widthRatio, heightRatio);
+            
+            const finalWidth = imgWidthMm * ratio;
+            const finalHeight = imgHeightMm * ratio;
+            
+            const imgX = (pdfWidth - finalWidth) / 2;
+            const imgY = margin;
+
+            pdf.addImage(imgData, 'PNG', imgX, imgY, finalWidth, finalHeight);
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + '-' + 
+                           String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(today.getDate()).padStart(2, '0');
+            const employeeName = this.realtimeLeaveInfo?.employee?.name || '员工';
+            const fileName = `请假申请表_${employeeName}_${dateStr}.pdf`;
+            
+            pdf.save(fileName);
+
+            this.showToast('PDF下载成功！', 'success');
+        } catch (error) {
+            console.error('Download PDF error:', error);
+            this.showToast(`PDF下载失败：${error.message}`, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
+     * 生成完整的实时表格（当收集到完整信息时）
+     */
+    async generateRealtimeTable(completeData) {
+        // 更新实时请假信息为完整数据
+        Object.assign(this.realtimeLeaveInfo, completeData);
+        
+        // 确保申请时间为当前时间
+        this.realtimeLeaveInfo.applicationTime = TimeUtils.formatDateTime(TimeUtils.getCurrentTime());
+        this.realtimeLeaveInfo.applicationDate = TimeUtils.formatDate(TimeUtils.getCurrentTime());
+        
+        console.log('生成完整实时表格:', this.realtimeLeaveInfo);
+        
+        // 如果表格还没生成，先生成基础表格
+        const tableContent = document.getElementById('realtimeTableContent');
+        if (tableContent.querySelector('.table-placeholder')) {
+            this.generateBaseRealtimeTable();
+        }
+        
+        // 更新所有字段
+        this.updateTableFields(completeData);
+        
+        // 生成完整的请假摘要
+        if (this.realtimeLeaveInfo.leaveType && this.realtimeLeaveInfo.startDate && this.realtimeLeaveInfo.endDate) {
+            try {
+                // 创建标准请假申请对象用于生成摘要
+                const leaveRequest = {
+                    employee: this.currentEmployee,
+                    leaveType: this.realtimeLeaveInfo.leaveType,
+                    startDate: this.realtimeLeaveInfo.startDate,
+                    endDate: this.realtimeLeaveInfo.endDate,
+                    days: this.realtimeLeaveInfo.days,
+                    reason: this.realtimeLeaveInfo.reason || '个人事务',
+                    advanceNoticeDays: TimeUtils.calculateAdvanceNoticeDays(this.realtimeLeaveInfo.startDate),
+                    applicationTime: this.realtimeLeaveInfo.applicationTime,
+                    applicationDate: this.realtimeLeaveInfo.applicationDate
+                };
+                
+                // 生成详细摘要
+                const summary = window.leaveRulesEngine.generateLeaveSummary(leaveRequest);
+                
+                // 更新表格为完整版本
+                this.showCompleteRealtimeTable(summary);
+                
+                // 保存请假记录
+                this.saveLeaveRecord(summary);
+                
+                this.showToast('✅ 完整请假表格已生成！', 'success');
+                
+            } catch (error) {
+                console.error('Generate complete table error:', error);
+                this.showToast('生成完整表格时出错，请检查信息是否完整', 'error');
+            }
+        }
+    }
+
+    /**
+     * 显示完整的实时表格（包含审批流程等详细信息）
+     */
+    showCompleteRealtimeTable(summary) {
+        const tableContent = document.getElementById('realtimeTableContent');
+        const employee = summary.employee;
+        const employeeSummary = window.employeeManager.getEmployeeSummary(employee);
+
+        const html = `
+            <div class="realtime-table">
+                <div class="leave-form">
+                    <div class="form-header">
+                        <h2>员工请假申请表</h2>
+                        <div class="form-id">申请编号：${this.generateApplicationId()}</div>
+                    </div>
+                    
+                    <!-- 核心表格区域 -->
+                    <div class="standard-table-section">
+                        <h3>📋 请假信息表</h3>
+                        <table class="standard-leave-table" id="realtimeStandardTable">
+                            <tbody>
+                                <tr>
+                                    <td class="field-label">员工姓名</td>
+                                    <td class="field-value" id="rt-employeeName">${employeeSummary.basic.name}</td>
+                                    <td class="field-label">工号</td>
+                                    <td class="field-value" id="rt-employeeId">${employeeSummary.basic.id}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假类型</td>
+                                    <td class="field-value leave-type" id="rt-leaveType">${summary.leaveType}</td>
+                                    <td class="field-label">请假时长</td>
+                                    <td class="field-value leave-days" id="rt-leaveDays">${summary.days} 天</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假日期</td>
+                                    <td class="field-value" colspan="3" id="rt-leaveDates">${summary.startDate} 至 ${summary.endDate}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">剩余年假时长</td>
+                                    <td class="field-value balance-highlight">${employeeSummary.leave.remainingAnnualLeave} 天</td>
+                                    <td class="field-label">申请时间</td>
+                                    <td class="field-value" id="rt-applicationTime">${summary.applicationTime}</td>
+                                </tr>
+                                <tr>
+                                    <td class="field-label">请假原因</td>
+                                    <td class="field-value" colspan="3" id="rt-reason">${summary.reason || '个人事务'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 详细信息区域 -->
+                    <div class="info-section">
+                        <h3>员工详细信息</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>部门：</label>
+                                <span>${employeeSummary.basic.department}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>职位：</label>
+                                <span>${employeeSummary.basic.position}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>直属主管：</label>
+                                <span>${employeeSummary.basic.supervisor}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>工作制度：</label>
+                                <span>${employeeSummary.basic.workType}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 审批流程 -->
+                    <div class="approval-section">
+                        <h3>审批流程</h3>
+                        <div class="approval-flow">
+                            ${summary.approvalProcess.approvers.map((approver, index) => `
+                                <div class="approval-step">
+                                    <div class="step-number">${index + 1}</div>
+                                    <div class="step-info">
+                                        <div class="step-title">${approver.level}</div>
+                                        <div class="step-name">${approver.name}</div>
+                                        ${approver.reason ? `<div class="step-reason">${approver.reason}</div>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="approval-note">
+                            预计审批时间：${summary.approvalProcess.estimatedProcessingDays} 个工作日
+                        </div>
+                    </div>
+
+                    ${summary.validation.warnings.length > 0 ? `
+                        <div class="warnings-section">
+                            <h3>注意事项</h3>
+                            <ul class="warning-list">
+                                ${summary.validation.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+
+                    ${summary.handoverRequirements.required ? `
+                        <div class="handover-section">
+                            <h3>工作交接要求</h3>
+                            <ul class="handover-list">
+                                ${summary.handoverRequirements.requirements.map(req => `<li>${req}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        tableContent.innerHTML = html;
+    }
+
+    /**
+     * 添加实时更新的视觉反馈
+     */
+    addUpdateIndicator(element) {
+        // 移除之前的指示器
+        const existingIndicator = element.querySelector('.update-indicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+        
+        // 添加新的更新指示器
+        const indicator = document.createElement('div');
+        indicator.className = 'update-indicator';
+        element.style.position = 'relative';
+        element.appendChild(indicator);
+        
+        // 3秒后自动移除指示器
+        setTimeout(() => {
+            indicator.remove();
+        }, 3000);
+    }
+
+    /**
+     * 优化的智能信息提取
+     */
+    async enhancedSmartExtract(aiResponse, userMessage) {
+        const combinedText = `${userMessage} ${aiResponse}`;
+        
+        // 更精确的日期匹配
+        const datePatterns = [
+            /(\d{4}[-年]\d{1,2}[-月]\d{1,2}[日]?)/g,
+            /(明天|后天|大后天)/g,
+            /(下周[一二三四五六日])/g,
+            /([一二三四五六七八九十]{1,2}月[一二三四五六七八九十]{1,2}[日号])/g
+        ];
+        
+        // 更精确的请假类型匹配
+        const leaveTypePatterns = {
+            年假: /年假|年休假|带薪假期/,
+            病假: /病假|看病|生病|身体不适|医院|治疗/,
+            事假: /事假|个人事务|家事|私事/,
+            婚假: /婚假|结婚|新婚/,
+            产假: /产假|生孩子|分娩/,
+            陪产假: /陪产假|陪护假|护理假/,
+            丧假: /丧假|葬礼|吊唁|亲人去世/,
+            调休假: /调休|倒休|补休/
+        };
+        
+        const updateData = {};
+        
+        // 检测请假类型
+        for (const [type, pattern] of Object.entries(leaveTypePatterns)) {
+            if (pattern.test(combinedText) && type !== this.realtimeLeaveInfo?.leaveType) {
+                updateData.leaveType = type;
+                break;
+            }
+        }
+        
+        // 检测日期
+        let detectedDates = [];
+        datePatterns.forEach(pattern => {
+            const matches = combinedText.match(pattern);
+            if (matches) {
+                detectedDates = detectedDates.concat(matches);
+            }
+        });
+        
+        if (detectedDates.length > 0) {
+            // 处理相对日期
+            const today = new Date();
+            const processedDates = detectedDates.map(date => {
+                if (date === '明天') {
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(today.getDate() + 1);
+                    return TimeUtils.formatDate(tomorrow);
+                } else if (date === '后天') {
+                    const dayAfterTomorrow = new Date(today);
+                    dayAfterTomorrow.setDate(today.getDate() + 2);
+                    return TimeUtils.formatDate(dayAfterTomorrow);
+                }
+                // 标准化日期格式
+                return date.replace(/[年月]/g, '-').replace(/[日号]/g, '');
+            });
+            
+            if (processedDates[0] !== this.realtimeLeaveInfo?.startDate) {
+                updateData.startDate = processedDates[0];
+            }
+            if (processedDates[1] && processedDates[1] !== this.realtimeLeaveInfo?.endDate) {
+                updateData.endDate = processedDates[1];
+            }
+        }
+        
+        // 检测原因
+        const reasonKeywords = ['因为', '由于', '原因是', '需要'];
+        for (const keyword of reasonKeywords) {
+            const index = combinedText.indexOf(keyword);
+            if (index !== -1) {
+                const reasonText = combinedText.substring(index + keyword.length, index + 50).trim();
+                if (reasonText && reasonText !== this.realtimeLeaveInfo?.reason) {
+                    updateData.reason = reasonText.split(/[，。！？\n]/)[0];
+                    break;
+                }
+            }
+        }
+        
+        return updateData;
     }
 }
 

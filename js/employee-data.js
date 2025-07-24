@@ -1,335 +1,345 @@
 /**
- * 员工数据管理模块
- * 处理员工基础信息、身份验证和假期数据计算
+ * 员工数据管理模块 - 重构为API调用版本
+ * 连接后端MySQL数据库，实现实时数据同步
+ * 版本：v2.0 - 数据库集成版本
  */
 
-// 员工基础数据 - 来自employee_data.xlsx
-const EMPLOYEE_DATA = [
-    {
-        id: 'TEC20220',
-        name: '张伟',
-        department: '技术部',
-        position: '高级工程师',
-        hireDate: '2022-03-01',
-        workType: '弹性工作制',
-        supervisor: '李技术总监',
-        annualLeave: 8,
-        usedSickLeave: 2,
-        usedPersonalLeave: 1,
-        phone: '13800138001',
-        emergencyContact: '张太太',
-        emergencyPhone: '13800138002'
-    },
-    {
-        id: 'TEC20230',
-        name: '王强',
-        department: '技术部',
-        position: '中级工程师',
-        hireDate: '2023-01-01',
-        workType: '弹性工作制',
-        supervisor: '李技术总监',
-        annualLeave: 5,
-        usedSickLeave: 0,
-        usedPersonalLeave: 0,
-        phone: '13800138003',
-        emergencyContact: '王妈妈',
-        emergencyPhone: '13800138004'
-    },
-    {
-        id: 'SAL20210',
-        name: '李娜',
-        department: '销售部',
-        position: '销售经理',
-        hireDate: '2021-06-01',
-        workType: '标准工作制',
-        supervisor: '陈销售总监',
-        annualLeave: 12,
-        usedSickLeave: 3,
-        usedPersonalLeave: 2,
-        phone: '13800138005',
-        emergencyContact: '李先生',
-        emergencyPhone: '13800138006'
-    },
-    {
-        id: 'PRD20220',
-        name: '赵敏',
-        department: '产品部',
-        position: '产品经理',
-        hireDate: '2022-09-01',
-        workType: '弹性工作制',
-        supervisor: '刘产品总监',
-        annualLeave: 10,
-        usedSickLeave: 1,
-        usedPersonalLeave: 1,
-        phone: '13800138007',
-        emergencyContact: '赵先生',
-        emergencyPhone: '13800138008'
-    },
-    {
-        id: 'MKT20230',
-        name: '孙丽',
-        department: '市场部',
-        position: '市场专员',
-        hireDate: '2023-08-01',
-        workType: '标准工作制',
-        supervisor: '周市场总监',
-        annualLeave: 3,
-        usedSickLeave: 0,
-        usedPersonalLeave: 1,
-        phone: '13800138009',
-        emergencyContact: '孙爸爸',
-        emergencyPhone: '13800138010'
-    },
-    {
-        id: 'OPS20200',
-        name: '吴军',
-        department: '运营部',
-        position: '客服主管',
-        hireDate: '2020-05-01',
-        workType: '标准工作制',
-        supervisor: '马运营经理',
-        annualLeave: 15,
-        usedSickLeave: 4,
-        usedPersonalLeave: 2,
-        phone: '13800138011',
-        emergencyContact: '吴太太',
-        emergencyPhone: '13800138012'
-    },
-    {
-        id: 'HR202100',
-        name: '郑红',
-        department: '人事部',
-        position: 'HR专员',
-        hireDate: '2021-02-01',
-        workType: '标准工作制',
-        supervisor: '林HR经理',
-        annualLeave: 10,
-        usedSickLeave: 2,
-        usedPersonalLeave: 1,
-        phone: '13800138013',
-        emergencyContact: '郑妈妈',
-        emergencyPhone: '13800138014'
-    },
-    {
-        id: 'FIN20200',
-        name: '钱进',
-        department: '财务部',
-        position: '会计',
-        hireDate: '2020-09-01',
-        workType: '标准工作制',
-        supervisor: '钱财务经理',
-        annualLeave: 12,
-        usedSickLeave: 5,
-        usedPersonalLeave: 3,
-        phone: '13800138015',
-        emergencyContact: '钱太太',
-        emergencyPhone: '13800138016'
-    }
-];
+// API配置
+const API_CONFIG = {
+    baseURL: 'http://localhost:3000/api',
+    timeout: 10000,
+    retryCount: 3
+};
 
 /**
- * 员工数据管理类
+ * API请求工具类
+ */
+class APIClient {
+    constructor(baseURL) {
+        this.baseURL = baseURL;
+    }
+
+    /**
+     * 发送API请求
+     */
+    async request(endpoint, options = {}) {
+        const url = `${this.baseURL}${endpoint}`;
+        const config = {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        };
+
+        if (config.body && typeof config.body === 'object') {
+            config.body = JSON.stringify(config.body);
+        }
+
+        try {
+            console.log(`🌐 API请求: ${config.method} ${url}`);
+            const response = await fetch(url, config);
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log(`✅ API响应成功:`, data);
+            return data;
+        } catch (error) {
+            console.error(`❌ API请求失败 ${config.method} ${url}:`, error.message);
+            
+            // 检查是否是网络连接问题
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                throw new Error('无法连接到后端服务器，请确保后端服务已启动 (http://localhost:3000)');
+            }
+            
+            throw error;
+        }
+    }
+
+    /**
+     * GET请求
+     */
+    async get(endpoint, params = {}) {
+        const queryString = new URLSearchParams(params).toString();
+        const url = queryString ? `${endpoint}?${queryString}` : endpoint;
+        return this.request(url);
+    }
+
+    /**
+     * POST请求
+     */
+    async post(endpoint, data = {}) {
+        return this.request(endpoint, {
+            method: 'POST',
+            body: data
+        });
+    }
+
+    /**
+     * PUT请求
+     */
+    async put(endpoint, data = {}) {
+        return this.request(endpoint, {
+            method: 'PUT',
+            body: data
+        });
+    }
+
+    /**
+     * DELETE请求
+     */
+    async delete(endpoint) {
+        return this.request(endpoint, {
+            method: 'DELETE'
+        });
+    }
+}
+
+/**
+ * 员工数据管理类 - API版本
  */
 class EmployeeDataManager {
     constructor() {
-        this.employees = EMPLOYEE_DATA;
+        this.apiClient = new APIClient(API_CONFIG.baseURL);
         this.currentEmployee = null;
+        this.employeeCache = new Map(); // 员工数据缓存
+        this.cacheExpiry = 5 * 60 * 1000; // 缓存5分钟
     }
 
     /**
-     * 通过姓名查找员工
-     * @param {string} name - 员工姓名
-     * @returns {Object|null} 员工信息对象或null
+     * 检查后端服务器状态
      */
-    findEmployeeByName(name) {
-        return this.employees.find(employee => 
-            employee.name === name.trim()
-        ) || null;
-    }
-
-    /**
-     * 通过工号查找员工
-     * @param {string} id - 员工工号
-     * @returns {Object|null} 员工信息对象或null
-     */
-    findEmployeeById(id) {
-        return this.employees.find(employee => 
-            employee.id === id.trim().toUpperCase()
-        ) || null;
-    }
-
-    /**
-     * 验证员工身份
-     * @param {string} identifier - 姓名或工号
-     * @returns {Object} 验证结果
-     */
-    authenticateEmployee(identifier) {
-        const trimmedIdentifier = identifier.trim();
-        
-        // 首先尝试按姓名查找
-        let employee = this.findEmployeeByName(trimmedIdentifier);
-        
-        if (employee) {
-            this.currentEmployee = employee;
+    async checkServerStatus() {
+        try {
+            const response = await this.apiClient.get('/health');
             return {
-                success: true,
-                method: 'name',
-                employee: employee,
-                message: `欢迎 ${employee.name}，验证成功！`
+                available: true,
+                message: response.message,
+                version: response.version
+            };
+        } catch (error) {
+            return {
+                available: false,
+                message: error.message
             };
         }
+    }
 
-        // 如果姓名查找失败，尝试工号查找
-        employee = this.findEmployeeById(trimmedIdentifier);
-        
-        if (employee) {
-            this.currentEmployee = employee;
+    /**
+     * 验证员工身份 - 调用后端API
+     */
+    async authenticateEmployee(identifier) {
+        try {
+            // 先检查服务器状态
+            const serverStatus = await this.checkServerStatus();
+            if (!serverStatus.available) {
+                return {
+                    success: false,
+                    message: `后端服务不可用: ${serverStatus.message}`,
+                    suggestion: '请检查后端服务器是否启动 (运行: cd backend && npm run dev)'
+                };
+            }
+
+            console.log(`🔍 验证员工身份: ${identifier}`);
+            const response = await this.apiClient.post('/auth/verify', { identifier });
+            
+            if (response.success) {
+                this.currentEmployee = response.employee;
+                console.log('✅ 员工验证成功:', this.currentEmployee);
+                
+                // 缓存员工信息
+                this.employeeCache.set(response.employee.basic.id, {
+                    data: response.employee,
+                    timestamp: Date.now()
+                });
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('❌ 员工身份验证失败:', error);
             return {
-                success: true,
-                method: 'id',
-                employee: employee,
-                message: `工号验证成功，欢迎 ${employee.name}！`
+                success: false,
+                message: `验证失败: ${error.message}`,
+                suggestion: '请检查网络连接和后端服务状态'
             };
         }
+    }
 
-        // 验证失败
-        return {
-            success: false,
-            method: null,
-            employee: null,
-            message: '未找到员工信息，请检查姓名或工号是否正确'
-        };
+    /**
+     * 提交请假申请到数据库
+     */
+    async submitLeaveApplication(leaveData) {
+        try {
+            console.log('📝 提交请假申请:', leaveData);
+            const response = await this.apiClient.post('/leave/apply', leaveData);
+            
+            if (response.success) {
+                console.log('✅ 请假申请提交成功:', response.applicationId);
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('❌ 提交请假申请失败:', error);
+            return {
+                success: false,
+                message: `提交失败: ${error.message}`
+            };
+        }
+    }
+
+    /**
+     * 获取请假记录
+     */
+    async getLeaveRecords(filters = {}) {
+        try {
+            console.log('📋 获取请假记录:', filters);
+            const response = await this.apiClient.get('/leave/records', filters);
+            
+            if (response.success) {
+                console.log(`✅ 获取到 ${response.records.length} 条请假记录`);
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('❌ 获取请假记录失败:', error);
+            return {
+                success: false,
+                message: `获取失败: ${error.message}`,
+                records: []
+            };
+        }
+    }
+
+    /**
+     * 获取所有员工信息（管理员）
+     */
+    async getAllEmployees() {
+        try {
+            console.log('👥 获取所有员工信息');
+            const response = await this.apiClient.get('/admin/employees');
+            
+            if (response.success) {
+                console.log(`✅ 获取到 ${response.employees.length} 个员工信息`);
+                
+                // 缓存所有员工信息
+                response.employees.forEach(emp => {
+                    this.employeeCache.set(emp.basic.id, {
+                        data: emp,
+                        timestamp: Date.now()
+                    });
+                });
+                
+                return response.employees;
+            }
+            
+            return [];
+        } catch (error) {
+            console.error('❌ 获取员工信息失败:', error);
+            return [];
+        }
+    }
+
+    /**
+     * 获取统计数据
+     */
+    async getAdminStats() {
+        try {
+            console.log('📊 获取统计数据');
+            const response = await this.apiClient.get('/admin/stats');
+            
+            if (response.success) {
+                console.log('✅ 统计数据获取成功:', response.stats);
+                return response.stats;
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('❌ 获取统计数据失败:', error);
+            return null;
+        }
+    }
+
+    /**
+     * 审批请假申请
+     */
+    async approveLeaveApplication(applicationId, action, comment, approverId) {
+        try {
+            console.log(`✅ 审批请假申请: ${applicationId} - ${action}`);
+            const response = await this.apiClient.post(`/admin/approve/${applicationId}`, {
+                action,
+                comment,
+                approverId
+            });
+            
+            if (response.success) {
+                console.log('✅ 审批操作成功');
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('❌ 审批操作失败:', error);
+            return {
+                success: false,
+                message: `审批失败: ${error.message}`
+            };
+        }
     }
 
     /**
      * 获取当前认证的员工信息
-     * @returns {Object|null} 当前员工信息
      */
     getCurrentEmployee() {
         return this.currentEmployee;
     }
 
     /**
-     * 计算员工工作年限
-     * @param {string} hireDate - 入职日期 (YYYY-MM-DD)
-     * @returns {number} 工作年限
-     */
-    calculateWorkYears(hireDate) {
-        const hire = new Date(hireDate);
-        const now = new Date();
-        const diffTime = now - hire;
-        const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-        return Math.floor(diffYears);
-    }
-
-    /**
-     * 计算员工应享年假天数（基于工作年限）
-     * @param {Object} employee - 员工对象
-     * @returns {number} 应享年假天数
-     */
-    calculateEntitledAnnualLeave(employee) {
-        const workYears = this.calculateWorkYears(employee.hireDate);
-        
-        if (workYears < 1) return 0;
-        if (workYears < 3) return 5;
-        if (workYears < 5) return 10;
-        return 15;
-    }
-
-    /**
-     * 计算员工剩余年假天数
-     * @param {Object} employee - 员工对象
-     * @returns {number} 剩余年假天数
-     */
-    calculateRemainingAnnualLeave(employee) {
-        const entitled = this.calculateEntitledAnnualLeave(employee);
-        // 注意：这里使用员工数据中的annualLeave作为已使用的年假
-        // 实际应该是 entitled - used，但根据现有数据结构，annualLeave表示剩余
-        return Math.max(0, employee.annualLeave);
-    }
-
-    /**
-     * 获取员工完整信息摘要
-     * @param {Object} employee - 员工对象
-     * @returns {Object} 员工信息摘要
+     * 获取员工摘要（保持兼容性）
      */
     getEmployeeSummary(employee) {
         if (!employee) return null;
-
-        const workYears = this.calculateWorkYears(employee.hireDate);
-        const entitledLeave = this.calculateEntitledAnnualLeave(employee);
-        const remainingLeave = this.calculateRemainingAnnualLeave(employee);
-
-        return {
-            basic: {
-                name: employee.name,
-                id: employee.id,
-                department: employee.department,
-                position: employee.position,
-                supervisor: employee.supervisor,
-                workType: employee.workType
-            },
-            employment: {
-                hireDate: employee.hireDate,
-                workYears: workYears,
-                workYearsText: `${workYears}年${Math.floor((new Date() - new Date(employee.hireDate)) / (1000 * 60 * 60 * 24) % 365.25 / 30)}个月`
-            },
-            leave: {
-                entitledAnnualLeave: entitledLeave,
-                remainingAnnualLeave: remainingLeave,
-                usedSickLeave: employee.usedSickLeave,
-                usedPersonalLeave: employee.usedPersonalLeave,
-                availableSickLeave: Math.max(0, 30 - employee.usedSickLeave), // 年度病假限额30天
-                availablePersonalLeave: Math.max(0, 10 - employee.usedPersonalLeave) // 年度事假限额10天
-            },
-            contact: {
-                phone: employee.phone,
-                emergencyContact: employee.emergencyContact,
-                emergencyPhone: employee.emergencyPhone
-            }
-        };
+        return employee; // 后端已格式化为正确的结构
     }
 
     /**
-     * 获取所有员工基础信息（用于管理员后台）
-     * @returns {Array} 所有员工信息数组
+     * 从缓存获取员工信息
      */
-    getAllEmployees() {
-        return this.employees.map(employee => this.getEmployeeSummary(employee));
+    getEmployeeFromCache(employeeId) {
+        const cached = this.employeeCache.get(employeeId);
+        if (cached && (Date.now() - cached.timestamp) < this.cacheExpiry) {
+            return cached.data;
+        }
+        return null;
     }
 
     /**
-     * 根据部门获取员工列表
-     * @param {string} department - 部门名称
-     * @returns {Array} 该部门的员工列表
+     * 清除缓存
      */
-    getEmployeesByDepartment(department) {
-        return this.employees
-            .filter(employee => employee.department === department)
-            .map(employee => this.getEmployeeSummary(employee));
+    clearCache() {
+        this.employeeCache.clear();
+        console.log('🗑️ 员工数据缓存已清除');
     }
 
     /**
-     * 获取部门列表
-     * @returns {Array} 唯一的部门名称数组
-     */
-    getDepartments() {
-        return [...new Set(this.employees.map(employee => employee.department))];
-    }
-
-    /**
-     * 验证员工是否有足够的假期余额
-     * @param {Object} employee - 员工对象
-     * @param {string} leaveType - 请假类型
-     * @param {number} days - 请假天数
-     * @returns {Object} 验证结果
+     * 验证假期余额（快速前端验证，实际由后端验证）
      */
     validateLeaveBalance(employee, leaveType, days) {
-        const summary = this.getEmployeeSummary(employee);
+        if (!employee || !employee.leave) {
+            return {
+                valid: false,
+                message: '员工信息不完整'
+            };
+        }
+
+        const leave = employee.leave;
         
         switch (leaveType) {
             case '年假':
-                const remaining = summary.leave.remainingAnnualLeave;
+                const remaining = leave.remainingAnnualLeave || 0;
                 return {
                     valid: remaining >= days,
                     remaining: remaining,
@@ -339,7 +349,7 @@ class EmployeeDataManager {
                 };
                 
             case '病假':
-                const availableSick = summary.leave.availableSickLeave;
+                const availableSick = leave.availableSickLeave || 30;
                 return {
                     valid: availableSick >= days,
                     remaining: availableSick,
@@ -349,7 +359,7 @@ class EmployeeDataManager {
                 };
                 
             case '事假':
-                const availablePersonal = summary.leave.availablePersonalLeave;
+                const availablePersonal = leave.availablePersonalLeave || 10;
                 return {
                     valid: availablePersonal >= days,
                     remaining: availablePersonal,
@@ -358,23 +368,12 @@ class EmployeeDataManager {
                         : `事假额度不足，仅剩${availablePersonal}天，申请${days}天`
                 };
                 
-            case '婚假':
-            case '产假':
-            case '陪产假':
-            case '丧假':
-            case '调休假':
+            default:
                 // 特殊假期不受年度限制
                 return {
                     valid: true,
                     remaining: '不限',
-                    message: `${leaveType}不受年度额度限制`
-                };
-                
-            default:
-                return {
-                    valid: false,
-                    remaining: 0,
-                    message: '未知的请假类型'
+                    message: `${leaveType}不受年度额度限制，将由后端进行最终验证`
                 };
         }
     }
@@ -384,13 +383,43 @@ class EmployeeDataManager {
      */
     resetCurrentEmployee() {
         this.currentEmployee = null;
+        console.log('🔄 当前员工状态已重置');
+    }
+
+    /**
+     * 获取连接状态信息
+     */
+    async getConnectionInfo() {
+        const serverStatus = await this.checkServerStatus();
+        return {
+            apiBaseURL: API_CONFIG.baseURL,
+            serverAvailable: serverStatus.available,
+            serverMessage: serverStatus.message,
+            cacheSize: this.employeeCache.size,
+            currentEmployee: this.currentEmployee?.basic?.name || null
+        };
     }
 }
 
 // 创建全局员工数据管理器实例
 window.employeeManager = new EmployeeDataManager();
 
+// 初始化时检查后端连接状态
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 员工数据管理器初始化...');
+    
+    const connectionInfo = await window.employeeManager.getConnectionInfo();
+    console.log('📡 连接信息:', connectionInfo);
+    
+    if (!connectionInfo.serverAvailable) {
+        console.warn('⚠️ 后端服务器未连接:', connectionInfo.serverMessage);
+        console.info('💡 请启动后端服务器: cd backend && npm run dev');
+    } else {
+        console.log('✅ 后端服务器连接正常');
+    }
+});
+
 // 导出供其他模块使用
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { EmployeeDataManager, EMPLOYEE_DATA };
+    module.exports = { EmployeeDataManager, APIClient };
 } 

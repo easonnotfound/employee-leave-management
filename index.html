@@ -117,6 +117,79 @@
                 </div>
             </section>
 
+            <!-- AI对话+实时表格区域（新增） -->
+            <section class="chat-table-section hidden" id="chatTableSection">
+                <div class="chat-table-container">
+                    <!-- 左侧对话区域 (1/3) -->
+                    <div class="chat-side">
+                        <div class="chat-container-inline">
+                            <div class="chat-header">
+                                <div class="chat-user-info">
+                                    <i class="fas fa-user-circle"></i>
+                                    <div>
+                                        <h4 id="chatUserNameInline">员工姓名</h4>
+                                        <span id="chatUserDeptInline">部门职位</span>
+                                    </div>
+                                </div>
+                                <button class="chat-reset-btn" id="chatResetBtnInline">
+                                    <i class="fas fa-redo"></i>
+                                    重新开始
+                                </button>
+                            </div>
+                            <div class="chat-messages-inline" id="chatMessagesInline">
+                                <!-- 消息将动态添加到这里 -->
+                            </div>
+                            <div class="chat-input-area">
+                                <div class="chat-input-container">
+                                    <input type="text" id="chatInputInline" placeholder="请输入您的消息..." disabled>
+                                    <button id="sendBtnInline" disabled>
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                                <div class="chat-status" id="chatStatusInline">AI助手正在准备中...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右侧表格区域 (2/3) -->
+                    <div class="table-side">
+                        <div class="table-header">
+                            <h3>
+                                <i class="fas fa-file-alt"></i>
+                                请假申请表（实时预览）
+                            </h3>
+                            <div class="table-actions">
+                                <button class="secondary-btn" id="editBtnInline">
+                                    <i class="fas fa-edit"></i>
+                                    编辑表格
+                                </button>
+                                <button class="success-btn hidden" id="saveBtnInline">
+                                    <i class="fas fa-save"></i>
+                                    保存修改
+                                </button>
+                                <button class="primary-btn" id="downloadImageBtnInline">
+                                    <i class="fas fa-image"></i>
+                                    下载图片
+                                </button>
+                                <button class="primary-btn" id="downloadPdfBtnInline">
+                                    <i class="fas fa-file-pdf"></i>
+                                    下载PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-content" id="realtimeTableContent">
+                            <div class="table-placeholder">
+                                <div class="placeholder-content">
+                                    <i class="fas fa-comments"></i>
+                                    <h4>开始对话生成表格</h4>
+                                    <p>请在左侧与AI助手对话，我会根据您的需求实时生成请假申请表</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- 请假单预览区域 -->
             <section class="preview-section hidden" id="previewSection">
                 <div class="preview-container">
