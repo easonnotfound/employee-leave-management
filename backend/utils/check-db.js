@@ -42,7 +42,7 @@ async function checkDatabaseConnection() {
         console.log(`👥 员工数据: ${employees[0].count} 条记录`);
         
         // 检查视图
-        const [views] = await connection.execute("SHOW TABLES WHERE Table_type = 'VIEW'");
+        const [views] = await connection.execute("SHOW FULL TABLES WHERE Table_Type = 'VIEW'");
         console.log(`👁️ 视图数量: ${views.length}`);
         
         await connection.end();
