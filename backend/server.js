@@ -180,6 +180,7 @@ app.get('/api/health', (req, res) => {
 
 // 1. 员工身份验证
 app.post('/api/auth/verify', async (req, res) => {
+    console.log('🔍 收到身份验证请求 - 服务器已更新!');
     try {
         const { identifier } = req.body;
         
@@ -192,7 +193,7 @@ app.post('/api/auth/verify', async (req, res) => {
 
         const [employees] = await pool.execute(`
             SELECT * FROM v_employee_details 
-            WHERE (name = ? OR id = ?) AND status = 'active'
+            WHERE (name = ? OR id = ?) AND status = '在职'
         `, [identifier.trim(), identifier.trim()]);
 
         if (employees.length === 0) {
@@ -268,7 +269,7 @@ app.post('/api/leave/apply', async (req, res) => {
         } = req.body;
 
         // 详细字段检查日志
-        console.log('📋 字段检查:');
+        console.log('📋 字段检查 :');
         console.log('employeeId:', employeeId, '(类型:', typeof employeeId, ')');
         console.log('leaveType:', leaveType, '(类型:', typeof leaveType, ')');
         console.log('startDate:', startDate, '(类型:', typeof startDate, ')');
@@ -288,7 +289,7 @@ app.post('/api/leave/apply', async (req, res) => {
 
         // 验证员工是否存在
         const [employeeCheck] = await connection.execute(
-            'SELECT id FROM employees WHERE id = ? AND status = "active"',
+            'SELECT id FROM employees WHERE id = ? AND status = "在职"',
             [employeeId]
         );
 
@@ -362,7 +363,7 @@ app.post('/api/leave/apply', async (req, res) => {
                 startDate,
                 endDate,
                 days,
-                status: 'pending'
+                status: '待审批'
             }
         });
     } catch (error) {
@@ -431,7 +432,7 @@ app.get('/api/admin/employees', async (req, res) => {
     try {
         const [employees] = await pool.execute(`
             SELECT * FROM v_employee_details 
-            WHERE status = 'active'
+            WHERE status = '在职'
             ORDER BY department_name, name
         `);
 
@@ -471,18 +472,18 @@ app.get('/api/admin/stats', async (req, res) => {
     try {
         // 总员工数
         const [totalEmployees] = await pool.execute(
-            'SELECT COUNT(*) as count FROM employees WHERE status = "active"'
+            'SELECT COUNT(*) as count FROM employees WHERE status = "在职"'
         );
 
         // 今日请假人数
         const [todayLeaves] = await pool.execute(`
             SELECT COUNT(*) as count FROM leave_applications 
-            WHERE CURDATE() BETWEEN start_date AND end_date AND status = 'approved'
+            WHERE CURDATE() BETWEEN start_date AND end_date AND status = '已批准'
         `);
 
         // 待审批数量
         const [pendingApprovals] = await pool.execute(
-            'SELECT COUNT(*) as count FROM leave_applications WHERE status = "pending"'
+            'SELECT COUNT(*) as count FROM leave_applications WHERE status = "待审批"'
         );
 
         // 本月请假统计
@@ -494,7 +495,7 @@ app.get('/api/admin/stats', async (req, res) => {
             FROM leave_applications 
             WHERE YEAR(start_date) = YEAR(CURDATE()) 
                 AND MONTH(start_date) = MONTH(CURDATE())
-                AND status = 'approved'
+                AND status = '已批准'
             GROUP BY leave_type
         `);
 
@@ -551,7 +552,7 @@ app.post('/api/admin/approve/:applicationId', async (req, res) => {
 
         const application = applications[0];
 
-        if (application.status !== 'pending') {
+        if (application.status !== '待审批') {
             await connection.rollback();
             connection.release();
             return res.status(400).json({
@@ -561,7 +562,7 @@ app.post('/api/admin/approve/:applicationId', async (req, res) => {
         }
 
         // 更新申请状态
-        const newStatus = action === 'approve' ? 'approved' : 'rejected';
+        const newStatus = action === 'approve' ? '已批准' : '已拒绝';
         await connection.execute(`
             UPDATE leave_applications 
             SET status = ?, approved_at = NOW(), rejected_reason = ?
