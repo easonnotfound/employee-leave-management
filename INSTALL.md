@@ -27,11 +27,17 @@
 
 2. **初始化数据库**
    ```sql
-   # 在MySQL命令行中执行
-   source database/init.sql;
+   # 在MySQL命令行中执行完整的数据库初始化
+   source database/schema.sql;
    # 或退出MySQL后执行
-   mysql -u root -p < database/init.sql
+   mysql -u root -p < database/schema.sql
    ```
+   
+   **重要提示：请使用 database/schema.sql 进行完整的数据库初始化，它包含：**
+   - 完整的表结构和约束
+   - 必要的视图和存储过程
+   - 触发器和索引优化
+   - 测试数据和配置信息
 
 3. **运行启动脚本**
    ```bash

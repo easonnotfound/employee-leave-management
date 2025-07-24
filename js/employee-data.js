@@ -54,7 +54,7 @@ class APIClient {
             
             // 检查是否是网络连接问题
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                throw new Error('无法连接到后端服务器，请确保后端服务已启动 (http://localhost:3000)');
+                throw new Error(`无法连接到后端服务器 (${this.baseURL})，请确保后端服务已启动:\n1. 运行: cd backend && npm run dev\n2. 检查: http://localhost:3000/api/health`);
             }
             
             throw error;

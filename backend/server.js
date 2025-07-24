@@ -64,7 +64,7 @@ app.use('/api/', limiter);
 
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
+    port: parseInt(process.env.DB_PORT) || 3306,
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '123456',
     database: process.env.DB_NAME || 'employee_leave_system',
@@ -77,6 +77,14 @@ const dbConfig = {
     timeout: 60000,
     reconnect: true
 };
+
+console.log('🔗 数据库连接配置:', {
+    host: dbConfig.host,
+    port: dbConfig.port,
+    user: dbConfig.user,
+    password: '***masked***',
+    database: dbConfig.database
+});
 
 // 创建数据库连接池
 const pool = mysql.createPool(dbConfig);
@@ -639,8 +647,9 @@ async function startServer() {
     app.listen(PORT, HOST, () => {
         console.log('🚀 员工请假管理系统后端API启动成功!');
         console.log(`📍 服务地址: http://${HOST}:${PORT}`);
+        console.log(`📍 前端连接地址: http://${HOST}:${PORT}/api`);
         console.log(`🌍 环境: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`⚡ API文档: http://${HOST}:${PORT}/api/health`);
+        console.log(`⚡ API健康检查: http://${HOST}:${PORT}/api/health`);
         console.log('');
         console.log('📋 可用的API端点:');
         console.log('   POST /api/auth/verify        - 员工身份验证');
@@ -651,6 +660,7 @@ async function startServer() {
         console.log('   POST /api/admin/approve/:id  - 审批请假申请');
         console.log('   GET  /api/admin/config       - 获取系统配置');
         console.log('');
+        console.log('🔗 确保前端配置连接到: http://localhost:3000/api');
         console.log('💡 使用 Ctrl+C 停止服务器');
     });
 }
