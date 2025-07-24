@@ -252,6 +252,9 @@ app.post('/api/leave/apply', async (req, res) => {
     await connection.beginTransaction();
     
     try {
+        // 添加详细日志记录
+        console.log('🔍 收到请假申请请求:', JSON.stringify(req.body, null, 2));
+        
         const {
             employeeId,
             leaveType,
@@ -263,6 +266,15 @@ app.post('/api/leave/apply', async (req, res) => {
             applicationTime,
             approvalProcess
         } = req.body;
+
+        // 详细字段检查日志
+        console.log('📋 字段检查:');
+        console.log('employeeId:', employeeId, '(类型:', typeof employeeId, ')');
+        console.log('leaveType:', leaveType, '(类型:', typeof leaveType, ')');
+        console.log('startDate:', startDate, '(类型:', typeof startDate, ')');
+        console.log('endDate:', endDate, '(类型:', typeof endDate, ')');
+        console.log('days:', days, '(类型:', typeof days, ')');
+        console.log('reason:', reason, '(类型:', typeof reason, ')');
 
         // 验证必填字段
         if (!employeeId || !leaveType || !startDate || !endDate || !days || !reason) {

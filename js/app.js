@@ -1526,9 +1526,12 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
      */
     async saveLeaveRecord(summary) {
         try {
+            // 详细日志：检查 summary 对象
+            console.log('🔍 检查 summary 对象:', JSON.stringify(summary, null, 2));
+            
             // 准备提交到后端的数据
             const leaveData = {
-                employeeId: summary.employee.id,
+                employeeId: summary.employee?.id,
                 leaveType: summary.leaveType,
                 startDate: summary.startDate,
                 endDate: summary.endDate,
@@ -1539,7 +1542,20 @@ ${this.chatHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n')}
                 approvalProcess: summary.approvalProcess
             };
 
-            console.log('💾 保存请假记录到数据库:', leaveData);
+            // 详细日志：检查准备的数据
+            console.log('💾 准备提交的数据:', JSON.stringify(leaveData, null, 2));
+            
+            // 检查必填字段
+            const requiredFields = ['employeeId', 'leaveType', 'startDate', 'endDate', 'days', 'reason'];
+            const missingFields = requiredFields.filter(field => !leaveData[field]);
+            
+            if (missingFields.length > 0) {
+                console.error('❌ 缺少必填字段:', missingFields);
+                this.showToast(`❌ 数据不完整，缺少: ${missingFields.join(', ')}`, 'error');
+                return null;
+            }
+
+            console.log('✅ 前端数据验证通过，提交到后端...');
 
             // 调用后端API提交请假申请
             const response = await window.employeeManager.submitLeaveApplication(leaveData);
